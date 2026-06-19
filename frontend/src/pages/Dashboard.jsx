@@ -32,9 +32,43 @@ const EVENT_LABELS = {
   USER_REGISTERED: 'Account registered',
 }
 
+function resolveUserRole(user) {
+  const metadataRole = user?.app_metadata?.role || user?.user_metadata?.role
+  if (typeof metadataRole === 'string' && metadataRole.trim()) {
+    return metadataRole.trim().toLowerCase()
+  }
+
+  const email = String(user?.email || '').toLowerCase()
+  if (email === String(import.meta.env.VITE_ADMIN_EMAIL || '').toLowerCase()) {
+    return 'admin'
+  }
+
+  return 'user'
+}
+
+function StatCard({ label, value, helper }) {
+  return (
+    <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+      <p className="text-xs text-gray-500">{label}</p>
+      <p className="text-sm font-medium text-gray-900 mt-0.5">{value}</p>
+      {helper && <p className="text-[11px] text-gray-400 mt-1">{helper}</p>}
+    </div>
+  )
+}
+
+function SectionTitle({ title, description }) {
+  return (
+    <div className="mb-4">
+      <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
+      {description && <p className="text-xs text-gray-500 mt-1">{description}</p>}
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const { user, signOut } = useAuth()
+  const role = resolveUserRole(user)
   const [auditLogs, setAuditLogs] = useState([])
   const [logsLoading, setLogsLoading] = useState(true)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
@@ -123,7 +157,9 @@ export default function Dashboard() {
         <Card>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Welcome back</h2>
+              <h2 className="text-lg font-semibold text-gray-900">
+                {role === 'admin' ? 'Admin dashboard' : 'User dashboard'}
+              </h2>
               <p className="text-sm text-gray-500 mt-0.5">{user?.email}</p>
             </div>
             <div className="flex items-center gap-2 text-sm">
@@ -139,25 +175,70 @@ export default function Dashboard() {
         </Card>
 
         <Card>
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">Security status</h3>
+          <SectionTitle
+            title="Session status"
+            description="Connected to Supabase auth and the audit log table."
+          />
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {[
-              { label: 'Authentication', value: 'Password + MFA' },
-              { label: 'MFA type', value: 'TOTP (RFC 6238)' },
-              { label: 'Session', value: 'Active (AAL2)' },
-              { label: 'Idle timeout', value: `${IDLE_MS / 60000} minutes` },
-            ].map(({ label, value }) => (
-              <div key={label} className="bg-gray-50 rounded-lg p-3">
-                <p className="text-xs text-gray-500">{label}</p>
-                <p className="text-sm font-medium text-gray-900 mt-0.5">{value}</p>
-              </div>
+              { label: 'Role', value: role === 'admin' ? 'Admin' : 'User', helper: 'Resolved from auth metadata or email fallback' },
+              { label: 'Authentication', value: 'Password + MFA', helper: 'Supabase auth' },
+              { label: 'Session', value: 'Active (AAL2)', helper: 'MFA required' },
+              { label: 'Idle timeout', value: `${IDLE_MS / 60000} minutes`, helper: 'Auto sign-out on inactivity' },
+            ].map((item) => (
+              <StatCard key={item.label} {...item} />
             ))}
           </div>
         </Card>
 
+        {role === 'admin' ? (
+          <Card>
+            <SectionTitle
+              title="Admin controls"
+              description="Basic working controls for now. These read from the live auth session and audit log."
+            />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <StatCard
+                label="Admin capability"
+                value="View all security logs"
+                helper="Currently backed by audit_logs"
+              />
+              <StatCard
+                label="Pending database work"
+                value="Role table / profile table"
+                helper="See databse-update.md"
+              />
+            </div>
+          </Card>
+        ) : (
+          <Card>
+            <SectionTitle
+              title="Your account"
+              description="Regular user view with the same live data source."
+            />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <StatCard
+                label="What you can do"
+                value="View your account status"
+                helper="Signed-in user only"
+              />
+              <StatCard
+                label="Security"
+                value="MFA protected"
+                helper="AAL2 is required before dashboard access"
+              />
+            </div>
+          </Card>
+        )}
+
         <Card>
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-gray-900">Security event log</h3>
+          <div className="flex items-center justify-between mb-4 gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">Security event log</h3>
+              <p className="text-xs text-gray-500 mt-1">
+                Live from Supabase table: <span className="font-medium">audit_logs</span>
+              </p>
+            </div>
             <button
               onClick={fetchLogs}
               className="text-xs text-gray-500 hover:text-gray-700 underline"
