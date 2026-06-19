@@ -1,0 +1,29 @@
+# Build outputs
+dist/
+dist-ssr/
+
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor directories and files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+/supabase
+
+# Environment variables — NEVER commit these
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
