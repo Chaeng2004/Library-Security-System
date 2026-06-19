@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { logEvent, AUDIT_EVENTS } from '../lib/audit'
 import { validate, registerSchema } from '../lib/validation'
 import { useAuth } from '../context/AuthContext'
+import { createUserProfile } from '../lib/api'
 import { Card } from '../components/ui/Card'
 import { TextInput } from '../components/ui/TextInput'
 import { Button } from '../components/ui/Button'
@@ -132,6 +133,17 @@ export default function Register() {
       if (!data?.user || data.user.identities?.length === 0) {
         setSuccess(true)
         return
+      }
+
+      // Create user profile automatically
+      if (data?.user?.id) {
+        await createUserProfile(data.user.id, {
+          first_name: '',
+          last_name: '',
+          phone: '',
+          address: '',
+          library_id: ''
+        })
       }
 
       await logEvent(AUDIT_EVENTS.USER_REGISTERED, {}, parsed.email, data.user?.id ?? null)
