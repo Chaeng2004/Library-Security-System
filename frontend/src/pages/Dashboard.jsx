@@ -6,8 +6,6 @@ import { useIdleTimeout } from '../hooks/useIdleTimeout'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 
-// i-change lang ang first nemric literal kung gusto nyo baguhin yung session seconds
-// wag na galawin ang warning_ms.
 const IDLE_MS = 15 * 60 * 1000
 const WARNING_MS = 60 * 1000
 
@@ -32,20 +30,6 @@ const EVENT_LABELS = {
   USER_REGISTERED: 'Account registered',
 }
 
-function resolveUserRole(user) {
-  const metadataRole = user?.app_metadata?.role || user?.user_metadata?.role
-  if (typeof metadataRole === 'string' && metadataRole.trim()) {
-    return metadataRole.trim().toLowerCase()
-  }
-
-  const email = String(user?.email || '').toLowerCase()
-  if (email === String(import.meta.env.VITE_ADMIN_EMAIL || '').toLowerCase()) {
-    return 'admin'
-  }
-
-  return 'user'
-}
-
 function StatCard({ label, value, helper }) {
   return (
     <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
@@ -67,8 +51,8 @@ function SectionTitle({ title, description }) {
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { user, signOut } = useAuth()
-  const role = resolveUserRole(user)
+  const { user, role, signOut } = useAuth()
+
   const [auditLogs, setAuditLogs] = useState([])
   const [logsLoading, setLogsLoading] = useState(true)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
@@ -86,7 +70,6 @@ export default function Dashboard() {
 
   useEffect(() => { fetchLogs() }, [fetchLogs])
 
-  // Automatic session termination after IDLE_MS of inactivity.
   const handleTimeout = useCallback(async () => {
     await signOut('timeout')
     navigate('/login', { replace: true })
@@ -100,9 +83,15 @@ export default function Dashboard() {
     navigate('/login', { replace: true })
   }
 
+  if (role === null) return null
+
+  if (role === 'admin') {
+    navigate('/admin', { replace: true })
+    return null
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
-
       {showLogoutConfirm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
@@ -157,9 +146,7 @@ export default function Dashboard() {
         <Card>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">
-                {role === 'admin' ? 'Admin dashboard' : 'User dashboard'}
-              </h2>
+              <h2 className="text-lg font-semibold text-gray-900">User dashboard</h2>
               <p className="text-sm text-gray-500 mt-0.5">{user?.email}</p>
             </div>
             <div className="flex items-center gap-2 text-sm">
@@ -174,6 +161,63 @@ export default function Dashboard() {
           </div>
         </Card>
 
+        {/* Quick Navigation */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <button
+            type="button"
+            onClick={(e) => { e.preventDefault(); navigate('/books') }}
+            className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 cursor-pointer hover:shadow-md transition-shadow"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-gray-900">Browse Books</p>
+                <p className="text-xs text-gray-500">Discover and borrow books</p>
+              </div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={(e) => { e.preventDefault(); navigate('/my-borrowings') }}
+            className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 cursor-pointer hover:shadow-md transition-shadow"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-gray-900">My Borrowings</p>
+                <p className="text-xs text-gray-500">View your borrowed books</p>
+              </div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={(e) => { e.preventDefault(); navigate('/profile') }}
+            className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 cursor-pointer hover:shadow-md transition-shadow"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
+                <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-gray-900">Profile</p>
+                <p className="text-xs text-gray-500">Manage your account</p>
+              </div>
+            </div>
+          </button>
+        </div>
+
         <Card>
           <SectionTitle
             title="Session status"
@@ -181,7 +225,7 @@ export default function Dashboard() {
           />
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {[
-              { label: 'Role', value: role === 'admin' ? 'Admin' : 'User', helper: 'Resolved from auth metadata or email fallback' },
+              { label: 'Role', value: 'User', helper: 'Resolved from user_profiles' },
               { label: 'Authentication', value: 'Password + MFA', helper: 'Supabase auth' },
               { label: 'Session', value: 'Active (AAL2)', helper: 'MFA required' },
               { label: 'Idle timeout', value: `${IDLE_MS / 60000} minutes`, helper: 'Auto sign-out on inactivity' },
@@ -191,45 +235,16 @@ export default function Dashboard() {
           </div>
         </Card>
 
-        {role === 'admin' ? (
-          <Card>
-            <SectionTitle
-              title="Admin controls"
-              description="Basic working controls for now. These read from the live auth session and audit log."
-            />
-            <div className="grid gap-4 sm:grid-cols-2">
-              <StatCard
-                label="Admin capability"
-                value="View all security logs"
-                helper="Currently backed by audit_logs"
-              />
-              <StatCard
-                label="Pending database work"
-                value="Role table / profile table"
-                helper="See databse-update.md"
-              />
-            </div>
-          </Card>
-        ) : (
-          <Card>
-            <SectionTitle
-              title="Your account"
-              description="Regular user view with the same live data source."
-            />
-            <div className="grid gap-4 sm:grid-cols-2">
-              <StatCard
-                label="What you can do"
-                value="View your account status"
-                helper="Signed-in user only"
-              />
-              <StatCard
-                label="Security"
-                value="MFA protected"
-                helper="AAL2 is required before dashboard access"
-              />
-            </div>
-          </Card>
-        )}
+        <Card>
+          <SectionTitle
+            title="Your account"
+            description="Regular user view."
+          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <StatCard label="What you can do" value="Browse & borrow books" helper="Signed-in user only" />
+            <StatCard label="Security" value="MFA protected" helper="AAL2 is required before dashboard access" />
+          </div>
+        </Card>
 
         <Card>
           <div className="flex items-center justify-between mb-4 gap-3">
@@ -239,10 +254,7 @@ export default function Dashboard() {
                 Live from Supabase table: <span className="font-medium">audit_logs</span>
               </p>
             </div>
-            <button
-              onClick={fetchLogs}
-              className="text-xs text-gray-500 hover:text-gray-700 underline"
-            >
+            <button onClick={fetchLogs} className="text-xs text-gray-500 hover:text-gray-700 underline">
               Refresh
             </button>
           </div>
