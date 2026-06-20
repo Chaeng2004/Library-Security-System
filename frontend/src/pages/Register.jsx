@@ -70,11 +70,11 @@ function PasswordChecklist({ value }) {
         return (
           <li key={label} className={`flex items-center gap-1.5 text-xs ${passed ? 'text-gray-600' : 'text-gray-400'}`}>
             {passed ? (
-              <svg className="w-3.5 h-3.5 text-gray-700 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3.5 h-3.5 text-gray-700 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
               </svg>
             ) : (
-              <span className="w-3.5 h-3.5 flex-shrink-0 flex items-center justify-center">
+              <span className="w-3.5 h-3.5 shrink-0 flex items-center justify-center">
                 <span className="w-1 h-1 rounded-full bg-gray-300 inline-block" />
               </span>
             )}
@@ -230,7 +230,7 @@ export default function Register() {
                 />
                 {confirmMatch && (
                   <p className="flex items-center gap-1.5 text-xs text-gray-600">
-                    <svg className="w-3.5 h-3.5 text-gray-700 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-3.5 h-3.5 text-gray-700 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                     </svg>
                     Passwords match
