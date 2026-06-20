@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import { useIdleTimeout } from '../hooks/useIdleTimeout'
+import { getUserActiveBorrowings, getUserPendingBorrowings, getUserRecentBorrowings } from '../lib/api'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 
@@ -57,6 +58,11 @@ export default function Dashboard() {
   const [logsLoading, setLogsLoading] = useState(true)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
 
+  const [activeBorrowings, setActiveBorrowings] = useState([])
+  const [pendingBorrowings, setPendingBorrowings] = useState([])
+  const [recentBorrowings, setRecentBorrowings] = useState([])
+  const [statsLoading, setStatsLoading] = useState(true)
+
   const fetchLogs = useCallback(async () => {
     setLogsLoading(true)
     const { data } = await supabase
@@ -68,7 +74,22 @@ export default function Dashboard() {
     setLogsLoading(false)
   }, [])
 
+  const fetchStats = useCallback(async () => {
+    if (!user?.id) return
+    setStatsLoading(true)
+    const [active, pending, recent] = await Promise.all([
+      getUserActiveBorrowings(user.id),
+      getUserPendingBorrowings(user.id),
+      getUserRecentBorrowings(user.id, 3),
+    ])
+    setActiveBorrowings(active.data ?? [])
+    setPendingBorrowings(pending.data ?? [])
+    setRecentBorrowings(recent.data ?? [])
+    setStatsLoading(false)
+  }, [user?.id])
+
   useEffect(() => { fetchLogs() }, [fetchLogs])
+  useEffect(() => { fetchStats() }, [fetchStats])
 
   const handleTimeout = useCallback(async () => {
     await signOut('timeout')
@@ -83,12 +104,13 @@ export default function Dashboard() {
     navigate('/login', { replace: true })
   }
 
-  if (role === null) return null
+  // Fix: navigate must be in an effect, not during render
+  useEffect(() => {
+    if (role === 'admin') navigate('/admin', { replace: true })
+  }, [role, navigate])
 
-  if (role === 'admin') {
-    navigate('/admin', { replace: true })
-    return null
-  }
+  if (role === null) return null
+  if (role === 'admin') return null
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -142,6 +164,35 @@ export default function Dashboard() {
         </div>
       </header>
 
+      <nav className="bg-white border-b border-gray-200">
+        <div className="max-w-4xl mx-auto px-4 py-3 flex gap-2 overflow-x-auto">
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="px-4 py-2 text-sm font-medium text-gray-900 bg-gray-100 rounded-md shrink-0"
+          >
+            Dashboard
+          </button>
+          <button
+            onClick={() => navigate('/books')}
+            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md shrink-0"
+          >
+            Browse Books
+          </button>
+          <button
+            onClick={() => navigate('/my-borrowings')}
+            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md shrink-0"
+          >
+            My Borrowings
+          </button>
+          <button
+            onClick={() => navigate('/profile')}
+            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md shrink-0"
+          >
+            Profile
+          </button>
+        </div>
+      </nav>
+
       <main className="max-w-4xl mx-auto px-4 py-8 flex flex-col gap-6">
         <Card>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -160,6 +211,107 @@ export default function Dashboard() {
             </div>
           </div>
         </Card>
+
+        {/* Overdue Warning */}
+        {!statsLoading && activeBorrowings.some(b => new Date(b.due_date) < new Date()) && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex gap-3">
+            <svg className="w-5 h-5 text-red-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+            <div>
+              <p className="text-sm font-semibold text-red-800">Overdue books</p>
+              <p className="text-xs text-red-600 mt-0.5">
+                You have {activeBorrowings.filter(b => new Date(b.due_date) < new Date()).length} overdue book(s). Please return them as soon as possible.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Stats row */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <StatCard
+            label="Currently borrowed"
+            value={statsLoading ? '…' : String(activeBorrowings.length)}
+            helper="Active loans"
+          />
+          <StatCard
+            label="Pending approval"
+            value={statsLoading ? '…' : String(pendingBorrowings.length)}
+            helper="Waiting for admin"
+          />
+          <StatCard
+            label="Overdue"
+            value={statsLoading ? '…' : String(activeBorrowings.filter(b => new Date(b.due_date) < new Date()).length)}
+            helper="Past due date"
+          />
+          <StatCard
+            label="Recently returned"
+            value={statsLoading ? '…' : String(recentBorrowings.length)}
+            helper="Last 3 returns"
+          />
+        </div>
+
+        {/* Active Borrowings */}
+        {!statsLoading && activeBorrowings.length > 0 && (
+          <Card>
+            <SectionTitle title="Currently borrowed" description="Books you currently have checked out" />
+            <div className="divide-y divide-gray-100">
+              {activeBorrowings.map(b => {
+                const overdue = new Date(b.due_date) < new Date()
+                return (
+                  <div key={b.id} className="py-3 flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{b.books?.title ?? '—'}</p>
+                      <p className="text-xs text-gray-500">{b.books?.author ?? ''}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className={`text-xs font-medium ${overdue ? 'text-red-600' : 'text-gray-600'}`}>
+                        Due: {b.due_date ? formatDate(b.due_date) : 'N/A'}
+                      </p>
+                      {overdue && <p className="text-[11px] text-red-500">Overdue</p>}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </Card>
+        )}
+
+        {/* Pending Requests */}
+        {!statsLoading && pendingBorrowings.length > 0 && (
+          <Card>
+            <SectionTitle title="Pending borrow requests" description="Waiting for admin approval" />
+            <div className="divide-y divide-gray-100">
+              {pendingBorrowings.map(b => (
+                <div key={b.id} className="py-3 flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{b.books?.title ?? '—'}</p>
+                    <p className="text-xs text-gray-500">{b.books?.author ?? ''}</p>
+                  </div>
+                  <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full shrink-0">Pending</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {/* Recent Returns */}
+        {!statsLoading && recentBorrowings.length > 0 && (
+          <Card>
+            <SectionTitle title="Recently returned" description="Your last 3 returned books" />
+            <div className="divide-y divide-gray-100">
+              {recentBorrowings.map(b => (
+                <div key={b.id} className="py-3 flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{b.books?.title ?? '—'}</p>
+                    <p className="text-xs text-gray-500">{b.books?.author ?? ''}</p>
+                  </div>
+                  <p className="text-xs text-gray-500 shrink-0">{b.returned_date ? formatDate(b.returned_date) : ''}</p>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
 
         {/* Quick Navigation */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -277,7 +429,7 @@ export default function Dashboard() {
                     <tr key={log.id} className="border-b border-gray-50 last:border-0">
                       <td className="py-2 pr-4">
                         <span className="inline-flex items-center gap-1.5">
-                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                             log.event_type.includes('FAILURE') ? 'bg-gray-400' : 'bg-gray-700'
                           }`} />
                           <span className="text-gray-800 whitespace-nowrap">
