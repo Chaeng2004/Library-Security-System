@@ -155,3 +155,61 @@ export async function getAllUsers() {
     .order('created_at', { ascending: false })
   return { data, error }
 }
+
+// Dashboard stats
+export async function getUserActiveBorrowings(userId) {
+  const { data, error } = await supabase
+    .from('borrowings')
+    .select('*, books(*)')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .order('due_date', { ascending: true })
+  return { data, error }
+}
+
+export async function getUserPendingBorrowings(userId) {
+  const { data, error } = await supabase
+    .from('borrowings')
+    .select('*, books(*)')
+    .eq('user_id', userId)
+    .eq('status', 'pending')
+    .order('borrowed_date', { ascending: false })
+  return { data, error }
+}
+
+export async function getUserRecentBorrowings(userId, limit = 3) {
+  const { data, error } = await supabase
+    .from('borrowings')
+    .select('*, books(*)')
+    .eq('user_id', userId)
+    .eq('status', 'returned')
+    .order('returned_date', { ascending: false })
+    .limit(limit)
+  return { data, error }
+}
+
+// Book management (admin)
+export async function addBook(book) {
+  const { data, error } = await supabase
+    .from('books')
+    .insert([book])
+    .select()
+  return { data, error }
+}
+
+export async function updateBook(id, updates) {
+  const { data, error } = await supabase
+    .from('books')
+    .update(updates)
+    .eq('id', id)
+    .select()
+  return { data, error }
+}
+
+export async function deleteBook(id) {
+  const { error } = await supabase
+    .from('books')
+    .delete()
+    .eq('id', id)
+  return { error }
+}
