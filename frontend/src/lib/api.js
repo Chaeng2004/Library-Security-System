@@ -94,8 +94,8 @@ export async function getUserBorrowings(userId) {
 // Admin API
 export async function getPendingBorrowings() {
   const { data, error } = await supabase
-    .from('borrowings')
-    .select('*, books(*), user_profiles(*)')
+    .from('borrowings_with_email')
+    .select('*, books(*)')
     .eq('status', 'pending')
     .order('borrowed_date', { ascending: false })
   return { data, error }
@@ -103,8 +103,8 @@ export async function getPendingBorrowings() {
 
 export async function getAllBorrowings() {
   const { data, error } = await supabase
-    .from('borrowings')
-    .select('*, books(*), user_profiles(*)')
+    .from('borrowings_with_email')
+    .select('*, books(*)')
     .order('borrowed_date', { ascending: false })
   return { data, error }
 }
@@ -115,7 +115,7 @@ export async function getUserProfile(userId) {
     .from('user_profiles')
     .select('*')
     .eq('id', userId)
-    .single()
+    .maybeSingle()
   return { data, error }
 }
 
