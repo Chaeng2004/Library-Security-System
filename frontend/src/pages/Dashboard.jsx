@@ -165,7 +165,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <button
             type="button"
-            onClick={() => navigate('/books')}
+            onClick={(e) => { e.preventDefault(); navigate('/books') }}
             className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 cursor-pointer hover:shadow-md transition-shadow"
           >
             <div className="flex items-center gap-3">
@@ -183,7 +183,7 @@ export default function Dashboard() {
 
           <button
             type="button"
-            onClick={() => navigate('/my-borrowings')}
+            onClick={(e) => { e.preventDefault(); navigate('/my-borrowings') }}
             className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 cursor-pointer hover:shadow-md transition-shadow"
           >
             <div className="flex items-center gap-3">
@@ -201,7 +201,7 @@ export default function Dashboard() {
 
           <button
             type="button"
-            onClick={() => navigate('/profile')}
+            onClick={(e) => { e.preventDefault(); navigate('/profile') }}
             className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 cursor-pointer hover:shadow-md transition-shadow"
           >
             <div className="flex items-center gap-3">
