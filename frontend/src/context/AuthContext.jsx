@@ -1,24 +1,15 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { logEvent, AUDIT_EVENTS } from '../lib/audit'
-
-// [SESSION-TIMEOUT] isStaleSessionError — detects a 403 JWT whose subject no longer
-// exists in the database (user deleted while a session was live). Callers must
-// immediately sign out to wipe the invalid token from localStorage.
-export function isStaleSessionError(error) {
-  if (!error) return false
-  return (
-    error.status === 403 ||
-    error.message?.includes('does not exist') ||
-    error.message?.includes('JWT')
-  )
-}
+import { getUserProfile } from '../lib/api'
+import { isStaleSessionError } from '../lib/authErrors'
 
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(undefined)
   const [user, setUser] = useState(null)
+  const [role, setRole] = useState(null)
   // [MFA] aal1 = password only; aal2 = password + verified TOTP factor.
   // ProtectedRoute blocks dashboard access until aal2 is confirmed.
   const [aal, setAal] = useState(null)
@@ -35,23 +26,29 @@ export function AuthProvider({ children }) {
     setAal(data?.currentLevel ?? null)
   }, [])
 
+  const fetchRole = useCallback(async (userId) => {
+    if (!userId) { setRole(null); return }
+    const { data } = await getUserProfile(userId)
+    setRole(data?.role ?? 'user')
+  }, [])
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s)
       setUser(s?.user ?? null)
-      if (s) refreshAal()
-      else setAal(null)
+      if (s) { refreshAal(); fetchRole(s.user.id) }
+      else { setAal(null); setRole(null) }
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s)
       setUser(s?.user ?? null)
-      if (s) refreshAal()
-      else setAal(null)
+      if (s) { refreshAal(); fetchRole(s.user.id) }
+      else { setAal(null); setRole(null) }
     })
 
     return () => subscription.unsubscribe()
-  }, [refreshAal])
+  }, [refreshAal, fetchRole])
 
   const signIn = useCallback(async (email, password) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
@@ -72,7 +69,7 @@ export function AuthProvider({ children }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ session, user, aal, refreshAal, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ session, user, role, aal, refreshAal, signIn, signUp, signOut }}>
       {children}
     </AuthContext.Provider>
   )

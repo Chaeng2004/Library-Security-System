@@ -35,10 +35,12 @@ export default function Login() {
   const { signIn, refreshAal, session, aal } = useAuth()
 
   useEffect(() => {
+    if (session === undefined) return
     if (!session) return
+    if (aal === null) return
     if (aal === 'aal2') navigate('/dashboard', { replace: true })
     else navigate('/mfa-setup', { replace: true })
-  }, [session, aal, navigate])
+  }, [session, aal]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [step, setStep] = useState('password')
 

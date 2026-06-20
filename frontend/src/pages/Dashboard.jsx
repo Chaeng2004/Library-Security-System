@@ -6,8 +6,6 @@ import { useIdleTimeout } from '../hooks/useIdleTimeout'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 
-// i-change lang ang first nemric literal kung gusto nyo baguhin yung session seconds
-// wag na galawin ang warning_ms.
 const IDLE_MS = 15 * 60 * 1000
 const WARNING_MS = 60 * 1000
 
@@ -32,20 +30,6 @@ const EVENT_LABELS = {
   USER_REGISTERED: 'Account registered',
 }
 
-function resolveUserRole(user) {
-  const metadataRole = user?.app_metadata?.role || user?.user_metadata?.role
-  if (typeof metadataRole === 'string' && metadataRole.trim()) {
-    return metadataRole.trim().toLowerCase()
-  }
-
-  const email = String(user?.email || '').toLowerCase()
-  if (email === String(import.meta.env.VITE_ADMIN_EMAIL || '').toLowerCase()) {
-    return 'admin'
-  }
-
-  return 'user'
-}
-
 function StatCard({ label, value, helper }) {
   return (
     <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
@@ -67,8 +51,15 @@ function SectionTitle({ title, description }) {
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { user, signOut } = useAuth()
-  const role = resolveUserRole(user)
+  const { user, role, signOut } = useAuth()
+
+  if (role === null) return null
+
+  if (role === 'admin') {
+    navigate('/admin', { replace: true })
+    return null
+  }
+
   const [auditLogs, setAuditLogs] = useState([])
   const [logsLoading, setLogsLoading] = useState(true)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
@@ -86,7 +77,6 @@ export default function Dashboard() {
 
   useEffect(() => { fetchLogs() }, [fetchLogs])
 
-  // Automatic session termination after IDLE_MS of inactivity.
   const handleTimeout = useCallback(async () => {
     await signOut('timeout')
     navigate('/login', { replace: true })
@@ -102,7 +92,6 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-
       {showLogoutConfirm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
@@ -157,9 +146,7 @@ export default function Dashboard() {
         <Card>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">
-                {role === 'admin' ? 'Admin dashboard' : 'User dashboard'}
-              </h2>
+              <h2 className="text-lg font-semibold text-gray-900">User dashboard</h2>
               <p className="text-sm text-gray-500 mt-0.5">{user?.email}</p>
             </div>
             <div className="flex items-center gap-2 text-sm">
@@ -238,7 +225,7 @@ export default function Dashboard() {
           />
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {[
-              { label: 'Role', value: role === 'admin' ? 'Admin' : 'User', helper: 'Resolved from auth metadata or email fallback' },
+              { label: 'Role', value: 'User', helper: 'Resolved from user_profiles' },
               { label: 'Authentication', value: 'Password + MFA', helper: 'Supabase auth' },
               { label: 'Session', value: 'Active (AAL2)', helper: 'MFA required' },
               { label: 'Idle timeout', value: `${IDLE_MS / 60000} minutes`, helper: 'Auto sign-out on inactivity' },
@@ -248,45 +235,16 @@ export default function Dashboard() {
           </div>
         </Card>
 
-        {role === 'admin' ? (
-          <Card>
-            <SectionTitle
-              title="Admin controls"
-              description="Basic working controls for now. These read from the live auth session and audit log."
-            />
-            <div className="grid gap-4 sm:grid-cols-2">
-              <StatCard
-                label="Admin capability"
-                value="View all security logs"
-                helper="Currently backed by audit_logs"
-              />
-              <StatCard
-                label="Pending database work"
-                value="Role table / profile table"
-                helper="See databse-update.md"
-              />
-            </div>
-          </Card>
-        ) : (
-          <Card>
-            <SectionTitle
-              title="Your account"
-              description="Regular user view with the same live data source."
-            />
-            <div className="grid gap-4 sm:grid-cols-2">
-              <StatCard
-                label="What you can do"
-                value="View your account status"
-                helper="Signed-in user only"
-              />
-              <StatCard
-                label="Security"
-                value="MFA protected"
-                helper="AAL2 is required before dashboard access"
-              />
-            </div>
-          </Card>
-        )}
+        <Card>
+          <SectionTitle
+            title="Your account"
+            description="Regular user view."
+          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <StatCard label="What you can do" value="Browse & borrow books" helper="Signed-in user only" />
+            <StatCard label="Security" value="MFA protected" helper="AAL2 is required before dashboard access" />
+          </div>
+        </Card>
 
         <Card>
           <div className="flex items-center justify-between mb-4 gap-3">
@@ -296,10 +254,7 @@ export default function Dashboard() {
                 Live from Supabase table: <span className="font-medium">audit_logs</span>
               </p>
             </div>
-            <button
-              onClick={fetchLogs}
-              className="text-xs text-gray-500 hover:text-gray-700 underline"
-            >
+            <button onClick={fetchLogs} className="text-xs text-gray-500 hover:text-gray-700 underline">
               Refresh
             </button>
           </div>

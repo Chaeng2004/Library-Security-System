@@ -15,6 +15,14 @@ export default function App() {
       <Route path="/register" element={<Register />} />
       <Route path="/mfa-setup" element={<MfaSetup />} />
       <Route
+        path="/admin"
+        element={
+          <ProtectedRoute adminOnly>
+            <AdminDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/dashboard"
         element={
           <ProtectedRoute>
