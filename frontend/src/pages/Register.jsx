@@ -7,6 +7,29 @@ import { Card } from '../components/ui/Card'
 import { TextInput } from '../components/ui/TextInput'
 import { Button } from '../components/ui/Button'
 
+function getErrorMessage(error, fallback = 'Unable to create account. Please try again.') {
+  if (!error) return fallback
+  if (typeof error === 'string') return error
+  if (typeof error.message === 'string') {
+    const message = error.message.trim()
+    if (message && message !== '{}' && message !== '[object Object]') return message
+  }
+  if (typeof error.error_description === 'string' && error.error_description.trim()) return error.error_description
+  if (typeof error.msg === 'string' && error.msg.trim()) return error.msg
+  if (error.name === 'AuthRetryableFetchError' && error.status === 500) {
+    return 'Unable to send the confirmation email. Check Supabase email/SMTP settings.'
+  }
+  const code = error.code || error.error_code || error.status
+  if (code) return `Account creation failed (${code}). Please try again.`
+  try {
+    const serialized = JSON.stringify(error)
+    if (serialized && serialized !== '{}' && serialized !== '"{}"') return serialized
+  } catch {
+    // Fall through to the generic fallback.
+  }
+  return fallback
+}
+
 const PASSWORD_RULES = [
   { label: 'At least 8 characters',      test: (v) => v.length >= 8 },
   { label: 'One uppercase letter (A–Z)',  test: (v) => /[A-Z]/.test(v) },
@@ -101,7 +124,7 @@ export default function Register() {
 
       if (error) {
         console.error('[signUp error]', error)
-        setServerError(error.message || 'Unable to create account. Please try again.')
+        setServerError(getErrorMessage(error))
         return
       }
 
