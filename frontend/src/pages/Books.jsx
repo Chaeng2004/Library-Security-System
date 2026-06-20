@@ -9,7 +9,7 @@ import { TextInput } from '../components/ui/TextInput'
 
 export default function Books() {
   const navigate = useNavigate()
-  const { user, signOut } = useAuth()
+  const { user, signOut, role } = useAuth()
   
   const [books, setBooks] = useState([])
   const [loading, setLoading] = useState(true)
@@ -247,15 +247,16 @@ export default function Books() {
 
                 <Button
                   onClick={() => handleBorrow(book.id)}
-                  disabled={!book.available}
+                  disabled={!book.available || role === 'admin'}
                   loading={borrowingStatus[book.id] === 'loading'}
                   variant={
                     borrowingStatus[book.id] === 'success' ? 'secondary' :
-                    !book.available ? 'secondary' : 'primary'
+                    !book.available || role === 'admin' ? 'secondary' : 'primary'
                   }
                   className="w-full"
                 >
                   {borrowingStatus[book.id] === 'success' ? '✓ Requested' :
+                   role === 'admin' ? 'Admin View Only' :
                    !book.available ? 'Not Available' :
                    'Request Book'}
                 </Button>
