@@ -53,13 +53,6 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const { user, role, signOut } = useAuth()
 
-  if (role === null) return null
-
-  if (role === 'admin') {
-    navigate('/admin', { replace: true })
-    return null
-  }
-
   const [auditLogs, setAuditLogs] = useState([])
   const [logsLoading, setLogsLoading] = useState(true)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
@@ -88,6 +81,13 @@ export default function Dashboard() {
     setShowLogoutConfirm(false)
     await signOut('user')
     navigate('/login', { replace: true })
+  }
+
+  if (role === null) return null
+
+  if (role === 'admin') {
+    navigate('/admin', { replace: true })
+    return null
   }
 
   return (
