@@ -6,6 +6,23 @@ import { getBooks, borrowBook, getUserBorrowings } from '../lib/api'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { TextInput } from '../components/ui/TextInput'
+import cover1984 from '../assets/1984.svg'
+import coverGreatGatsby from '../assets/thegreatgatsby.svg'
+import coverMockingbird from '../assets/tokillamockingbird.svg'
+import coverCatcher from '../assets/thecatcherintherye.svg'
+import coverProud from '../assets/iyanlavanzant.svg'
+
+const BOOK_COVERS = {
+  'The Great Gatsby': coverGreatGatsby,
+  'To Kill a Mockingbird': coverMockingbird,
+  '1984': cover1984,
+  'The Catcher in the Rye': coverCatcher,
+  'Proud': coverProud,
+}
+
+function getBookCover(title) {
+  return BOOK_COVERS[title] ?? null
+}
 
 export default function Books() {
   const navigate = useNavigate()
@@ -213,35 +230,39 @@ export default function Books() {
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {books.map((book) => (
+            {books.map((book) => {
+              const cover = getBookCover(book.title)
+              return (
               <Card key={book.id} className="flex flex-col hover:shadow-md transition-shadow">
-                {book.cover_url && (
-                  <div className="mb-4 -m-6 mb-4 bg-gray-100 rounded-t-xl h-48 overflow-hidden">
-                    <img
-                      src={book.cover_url}
-                      alt={book.title}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                )}
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-1 line-clamp-2">
-                    {book.title}
-                  </h3>
-                  <p className="text-sm text-gray-600 mb-2">{book.author}</p>
-                  <p className="text-sm text-gray-500 mb-4 line-clamp-2">
-                    {book.description || 'No description'}
-                  </p>
-                  
-                  <div className="flex justify-between items-center text-sm mb-4">
-                    <span className="text-gray-600">ISBN: {book.isbn || 'N/A'}</span>
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${
-                      book.available
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-red-100 text-red-800'
-                    }`}>
-                      {book.available ? 'Available' : 'Borrowed'}
-                    </span>
+                <div className="flex gap-4 flex-1 min-h-0 mb-4">
+                  {cover && (
+                    <div className="flex-shrink-0 w-20 h-[120px] rounded-md overflow-hidden bg-gray-50">
+                      <img
+                        src={cover}
+                        alt={`${book.title} cover`}
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0 flex flex-col">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-1 line-clamp-2">
+                      {book.title}
+                    </h3>
+                    <p className="text-sm text-gray-600 mb-2">{book.author}</p>
+                    <p className="text-sm text-gray-500 mb-4 line-clamp-2">
+                      {book.description || 'No description'}
+                    </p>
+                    
+                    <div className="flex justify-between items-center text-sm mt-auto">
+                      <span className="text-gray-600">ISBN: {book.isbn || 'N/A'}</span>
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${
+                        book.available
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-red-100 text-red-800'
+                      }`}>
+                        {book.available ? 'Available' : 'Borrowed'}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -261,7 +282,7 @@ export default function Books() {
                    'Request Book'}
                 </Button>
               </Card>
-            ))}
+            )})}
           </div>
         )}
       </main>

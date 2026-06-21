@@ -68,9 +68,9 @@ function PasswordChecklist({ value }) {
       {PASSWORD_RULES.map(({ label, test }) => {
         const passed = test(value)
         return (
-          <li key={label} className={`flex items-center gap-1.5 text-xs ${passed ? 'text-gray-600' : 'text-gray-400'}`}>
+          <li key={label} className={`flex items-center gap-1.5 text-xs ${passed ? 'text-green-600' : 'text-gray-400'}`}>
             {passed ? (
-              <svg className="w-3.5 h-3.5 text-gray-700 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3.5 h-3.5 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
               </svg>
             ) : (
@@ -229,8 +229,8 @@ export default function Register() {
                   rightSlot={<EyeToggle show={showConfirm} onToggle={() => setShowConfirm((v) => !v)} />}
                 />
                 {confirmMatch && (
-                  <p className="flex items-center gap-1.5 text-xs text-gray-600">
-                    <svg className="w-3.5 h-3.5 text-gray-700 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <p className="flex items-center gap-1.5 text-xs text-green-600">
+                    <svg className="w-3.5 h-3.5 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                     </svg>
                     Passwords match
