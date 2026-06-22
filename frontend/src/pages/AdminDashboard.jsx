@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useIdleTimeout } from '../hooks/useIdleTimeout'
-import { getPendingBorrowings, getAllBorrowings, approveBorrowing, rejectBorrowing } from '../lib/api'
+import { getPendingBorrowings, getAllBorrowings, approveBorrowing, rejectBorrowing, returnBook, getBooks, addBook, updateBook, deleteBook } from '../lib/api'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
+import { TextInput } from '../components/ui/TextInput'
 
 function formatDate(dateString) {
   if (!dateString) return 'N/A'
@@ -32,7 +33,15 @@ export default function AdminDashboard() {
   const [actionStatus, setActionStatus] = useState({})
   const [activeTab, setActiveTab] = useState('pending')
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
-  const [confirmAction, setConfirmAction] = useState(null) // { type: 'approve'|'reject', borrowing }
+  const [confirmAction, setConfirmAction] = useState(null)
+
+  // Books management state
+  const [books, setBooks] = useState([])
+  const [booksLoading, setBooksLoading] = useState(false)
+  const [bookForm, setBookForm] = useState({ title: '', author: '', isbn: '', description: '', available: true, cover_url: '' })
+  const [editingBook, setEditingBook] = useState(null) // null = create mode, object = edit mode
+  const [showBookForm, setShowBookForm] = useState(false)
+  const [bookActionStatus, setBookActionStatus] = useState('')
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -42,7 +51,15 @@ export default function AdminDashboard() {
     setLoading(false)
   }, [])
 
+  const fetchBooks = useCallback(async () => {
+    setBooksLoading(true)
+    const { data } = await getBooks()
+    setBooks(data || [])
+    setBooksLoading(false)
+  }, [])
+
   useEffect(() => { fetchData() }, [fetchData])
+  useEffect(() => { if (activeTab === 'books') fetchBooks() }, [activeTab, fetchBooks])
 
   const handleTimeout = useCallback(async () => {
     await signOut('timeout')
@@ -73,7 +90,7 @@ export default function AdminDashboard() {
         setActionStatus(prev => ({ ...prev, [borrowing.id]: 'approved' }))
         fetchData()
       }
-    } else {
+    } else if (type === 'reject') {
       const { error } = await rejectBorrowing(borrowing.id)
       if (error) {
         setActionStatus(prev => ({ ...prev, [borrowing.id]: 'error' }))
@@ -81,7 +98,57 @@ export default function AdminDashboard() {
       } else {
         fetchData()
       }
+    } else if (type === 'return') {
+      const { error } = await returnBook(borrowing.id, borrowing.book_id)
+      if (error) {
+        setActionStatus(prev => ({ ...prev, [borrowing.id]: 'error' }))
+        alert('Failed to mark as returned: ' + error.message)
+      } else {
+        fetchData()
+      }
     }
+  }
+
+  const confirmActionLabel = confirmAction?.type === 'approve' ? 'Approve'
+    : confirmAction?.type === 'reject' ? 'Reject'
+    : 'Mark as Returned'
+  const confirmActionDesc = confirmAction?.type === 'approve'
+    ? 'This will mark the borrowing as active and make the book unavailable.'
+    : confirmAction?.type === 'reject'
+    ? 'This will permanently delete the borrowing request.'
+    : 'This will mark the book as returned and make it available again.'
+
+  const handleBookFormSubmit = async () => {
+    if (!bookForm.title.trim() || !bookForm.author.trim()) {
+      setBookActionStatus('Title and author are required.')
+      return
+    }
+    setBookActionStatus('saving')
+    if (editingBook) {
+      const { error } = await updateBook(editingBook.id, bookForm)
+      if (error) { setBookActionStatus('Error: ' + error.message); return }
+    } else {
+      const { error } = await addBook(bookForm)
+      if (error) { setBookActionStatus('Error: ' + error.message); return }
+    }
+    setBookActionStatus('')
+    setShowBookForm(false)
+    setEditingBook(null)
+    setBookForm({ title: '', author: '', isbn: '', description: '', available: true, cover_url: '' })
+    fetchBooks()
+  }
+
+  const handleDeleteBook = async (id) => {
+    if (!window.confirm('Delete this book? This cannot be undone.')) return
+    const { error } = await deleteBook(id)
+    if (error) { alert('Failed to delete: ' + error.message); return }
+    fetchBooks()
+  }
+
+  const openEditBook = (book) => {
+    setEditingBook(book)
+    setBookForm({ title: book.title, author: book.author, isbn: book.isbn || '', description: book.description || '', available: book.available, cover_url: book.cover_url || '' })
+    setShowBookForm(true)
   }
 
   const statusBadge = (status) => {
@@ -103,12 +170,10 @@ export default function AdminDashboard() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
             <h2 className="text-base font-semibold text-gray-900">
-              {confirmAction.type === 'approve' ? 'Approve request?' : 'Reject request?'}
+              {confirmActionLabel}?
             </h2>
             <p className="mt-2 text-sm text-gray-500">
-              {confirmAction.type === 'approve'
-                ? 'This will mark the borrowing as active and make the book unavailable.'
-                : 'This will permanently delete the borrowing request.'}
+              {confirmActionDesc}
             </p>
             <div className="mt-5 flex gap-3 justify-end">
               <button
@@ -120,10 +185,12 @@ export default function AdminDashboard() {
               <button
                 onClick={handleConfirmAction}
                 className={`px-4 py-2 text-sm font-medium text-white rounded-md transition ${
-                  confirmAction.type === 'approve' ? 'bg-gray-900 hover:bg-gray-700' : 'bg-red-600 hover:bg-red-700'
+                  confirmAction.type === 'approve' ? 'bg-gray-900 hover:bg-gray-700'
+                  : confirmAction.type === 'return' ? 'bg-gray-900 hover:bg-gray-700'
+                  : 'bg-red-600 hover:bg-red-700'
                 }`}
               >
-                {confirmAction.type === 'approve' ? 'Approve' : 'Reject'}
+                {confirmActionLabel}
               </button>
             </div>
           </div>
@@ -213,7 +280,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-2 mb-6">
+        <div className="flex gap-2 mb-6 flex-wrap">
           <button
             onClick={() => setActiveTab('pending')}
             className={`px-4 py-2 text-sm font-medium rounded-md transition ${activeTab === 'pending' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}
@@ -226,13 +293,21 @@ export default function AdminDashboard() {
           >
             All Borrowings
           </button>
+          <button
+            onClick={() => setActiveTab('books')}
+            className={`px-4 py-2 text-sm font-medium rounded-md transition ${activeTab === 'books' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}
+          >
+            Manage Books
+          </button>
         </div>
 
-        {loading ? (
+        {loading && (
           <div className="flex justify-center items-center h-64">
             <div className="animate-spin h-8 w-8 border-4 border-gray-200 border-t-gray-900 rounded-full"></div>
           </div>
-        ) : activeTab === 'pending' ? (
+        )}
+
+        {!loading && activeTab === 'pending' && (
           pendingBorrowings.length === 0 ? (
             <Card className="text-center py-12">
               <p className="text-gray-500">No pending requests</p>
@@ -252,7 +327,7 @@ export default function AdminDashboard() {
                       <p>Due: {formatDate(borrowing.due_date)}</p>
                     </div>
                   </div>
-                  <div className="flex gap-2 flex-shrink-0">
+                  <div className="flex gap-2 shrink-0">
                     <Button
                       onClick={() => handleApprove(borrowing)}
                       loading={actionStatus[borrowing.id] === 'loading'}
@@ -273,7 +348,9 @@ export default function AdminDashboard() {
               ))}
             </div>
           )
-        ) : (
+        )}
+
+        {!loading && activeTab === 'all' && (
           <div className="grid gap-4">
             {allBorrowings.length === 0 ? (
               <Card className="text-center py-12">
@@ -294,9 +371,133 @@ export default function AdminDashboard() {
                       {borrowing.returned_date && <p>Returned: {formatDate(borrowing.returned_date)}</p>}
                     </div>
                   </div>
-                  {statusBadge(borrowing.status)}
+                  <div className="flex items-center gap-2 shrink-0">
+                    {statusBadge(borrowing.status)}
+                    {borrowing.status === 'active' && (
+                      <button
+                        onClick={() => setConfirmAction({ type: 'return', borrowing })}
+                        disabled={actionStatus[borrowing.id] === 'loading'}
+                        className="px-3 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition disabled:opacity-50"
+                      >
+                        Mark Returned
+                      </button>
+                    )}
+                  </div>
                 </Card>
               ))
+            )}
+          </div>
+        )}
+
+        {!loading && activeTab === 'books' && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold text-gray-900">Books ({books.length})</h2>
+              <Button onClick={() => { setEditingBook(null); setBookForm({ title: '', author: '', isbn: '', description: '', available: true, cover_url: '' }); setShowBookForm(true) }}>
+                Add Book
+              </Button>
+            </div>
+
+            {showBookForm && (
+              <Card className="mb-6">
+                <h3 className="text-sm font-semibold text-gray-900 mb-4">{editingBook ? 'Edit Book' : 'New Book'}</h3>
+                <div className="grid gap-3">
+                  <TextInput
+                    label="Title"
+                    value={bookForm.title}
+                    onChange={e => setBookForm(p => ({ ...p, title: e.target.value }))}
+                    placeholder="Book title"
+                  />
+                  <TextInput
+                    label="Author"
+                    value={bookForm.author}
+                    onChange={e => setBookForm(p => ({ ...p, author: e.target.value }))}
+                    placeholder="Author name"
+                  />
+                  <TextInput
+                    label="ISBN"
+                    value={bookForm.isbn}
+                    onChange={e => setBookForm(p => ({ ...p, isbn: e.target.value }))}
+                    placeholder="ISBN (optional)"
+                  />
+                  <TextInput
+                    label="Cover URL"
+                    value={bookForm.cover_url}
+                    onChange={e => setBookForm(p => ({ ...p, cover_url: e.target.value }))}
+                    placeholder="https://... (optional)"
+                  />
+                  <div>
+                    <label className="text-sm font-medium text-gray-700 block mb-1">Description</label>
+                    <textarea
+                      value={bookForm.description}
+                      onChange={e => setBookForm(p => ({ ...p, description: e.target.value }))}
+                      placeholder="Book description (optional)"
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                    />
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={bookForm.available}
+                      onChange={e => setBookForm(p => ({ ...p, available: e.target.checked }))}
+                      className="rounded"
+                    />
+                    Available for borrowing
+                  </label>
+                  {bookActionStatus && bookActionStatus !== 'saving' && (
+                    <p className="text-xs text-red-600">{bookActionStatus}</p>
+                  )}
+                  <div className="flex gap-3 pt-2">
+                    <Button onClick={handleBookFormSubmit} loading={bookActionStatus === 'saving'}>
+                      {editingBook ? 'Save Changes' : 'Add Book'}
+                    </Button>
+                    <Button variant="secondary" onClick={() => { setShowBookForm(false); setEditingBook(null); setBookActionStatus('') }}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            {booksLoading ? (
+              <div className="flex justify-center items-center h-32">
+                <div className="animate-spin h-8 w-8 border-4 border-gray-200 border-t-gray-900 rounded-full" />
+              </div>
+            ) : books.length === 0 ? (
+              <Card className="text-center py-12">
+                <p className="text-gray-500">No books in the library yet.</p>
+              </Card>
+            ) : (
+              <div className="grid gap-3">
+                {books.map(book => (
+                  <Card key={book.id} className="flex items-center justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 truncate">{book.title}</p>
+                      <p className="text-xs text-gray-500">{book.author} {book.isbn ? `— ${book.isbn}` : ''}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        book.available ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                      }`}>
+                        {book.available ? 'Available' : 'Borrowed'}
+                      </span>
+                      <button
+                        onClick={() => openEditBook(book)}
+                        className="px-3 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDeleteBook(book.id)}
+                        className="px-3 py-1 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-md hover:bg-red-100 transition"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </Card>
+                ))}
+              </div>
             )}
           </div>
         )}

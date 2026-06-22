@@ -31,6 +31,7 @@ export default function Books() {
   const [books, setBooks] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [availableOnly, setAvailableOnly] = useState(false)
   const [borrowingStatus, setBorrowingStatus] = useState({})
   const [borrowings, setBorrowings] = useState([])
   const [selectedBookId, setSelectedBookId] = useState(null)
@@ -41,9 +42,12 @@ export default function Books() {
     fetchUserBorrowings()
   }, [])
 
-  const fetchBooks = async () => {
+  const fetchBooks = async (search = searchTerm, onlyAvailable = availableOnly) => {
     setLoading(true)
-    const { data, error } = await getBooks()
+    const filters = {}
+    if (search.trim()) filters.search = search
+    if (onlyAvailable) filters.available = true
+    const { data, error } = await getBooks(filters)
     if (!error) {
       setBooks(data || [])
     }
@@ -58,21 +62,41 @@ export default function Books() {
   const handleSearch = async (value) => {
     setSearchTerm(value)
     if (value.trim()) {
-      const { data } = await getBooks({ search: value })
+      const { data } = await getBooks({ search: value, ...(availableOnly ? { available: true } : {}) })
       setBooks(data || [])
     } else {
-      fetchBooks()
+      fetchBooks('', availableOnly)
     }
+  }
+
+  const handleAvailableToggle = () => {
+    const next = !availableOnly
+    setAvailableOnly(next)
+    fetchBooks(searchTerm, next)
   }
 
   const handleBorrow = async (bookId) => {
     setSelectedBookId(bookId)
-    setDueDate('')
+    // Pre-fill due date to today + 14 days
+    const d = new Date()
+    d.setDate(d.getDate() + 14)
+    setDueDate(d.toISOString().split('T')[0])
   }
 
   const handleConfirmBorrow = async () => {
     if (!dueDate) {
       alert('Please select a due date')
+      return
+    }
+
+    // Prevent duplicate requests
+    const alreadyRequested = borrowings.some(
+      b => b.book_id === selectedBookId && (b.status === 'pending' || b.status === 'active')
+    )
+    if (alreadyRequested) {
+      alert('You already have a pending or active request for this book.')
+      setSelectedBookId(null)
+      setDueDate('')
       return
     }
 
@@ -209,14 +233,26 @@ export default function Books() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Search */}
-        <div className="mb-8">
-          <TextInput
-            placeholder="Search books by title or author..."
-            value={searchTerm}
-            onChange={(e) => handleSearch(e.target.value)}
-            className="w-full"
-          />
+        {/* Search and Filter */}
+        <div className="mb-8 flex flex-col sm:flex-row gap-3">
+          <div className="flex-1">
+            <TextInput
+              placeholder="Search books by title or author..."
+              value={searchTerm}
+              onChange={(e) => handleSearch(e.target.value)}
+              className="w-full"
+            />
+          </div>
+          <button
+            onClick={handleAvailableToggle}
+            className={`px-4 py-2 text-sm font-medium rounded-md border transition shrink-0 ${
+              availableOnly
+                ? 'bg-gray-900 text-white border-gray-900'
+                : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            {availableOnly ? 'Available only' : 'All books'}
+          </button>
         </div>
 
         {/* Books Grid */}
@@ -242,6 +278,12 @@ export default function Books() {
                         className="w-full h-full object-contain"
                       />
                     </div>
+                  ) : (
+                    <div className="shrink-0 w-20 h-[120px] rounded-md overflow-hidden bg-gray-100 flex items-center justify-center">
+                      <svg className="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                      </svg>
+                    </div>
                   )}
                   <div className="flex-1 min-w-0 flex flex-col">
                     <h3 className="text-lg font-semibold text-gray-900 mb-1 line-clamp-2">
@@ -251,7 +293,6 @@ export default function Books() {
                     <p className="text-sm text-gray-500 mb-4 line-clamp-2">
                       {book.description || 'No description'}
                     </p>
-                    
                     <div className="flex justify-between items-center text-sm mt-auto">
                       <span className="text-gray-600">ISBN: {book.isbn || 'N/A'}</span>
                       <span className={`px-2 py-1 rounded text-xs font-medium ${
@@ -275,7 +316,7 @@ export default function Books() {
                   }
                   className="w-full"
                 >
-                  {borrowingStatus[book.id] === 'success' ? '✓ Requested' :
+                  {borrowingStatus[book.id] === 'success' ? 'Requested' :
                    role === 'admin' ? 'Admin View Only' :
                    !book.available ? 'Not Available' :
                    'Request Book'}

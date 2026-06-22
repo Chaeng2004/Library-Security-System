@@ -163,6 +163,7 @@ export default function UserProfile() {
                       value={profile.first_name}
                       onChange={(e) => handleInputChange('first_name', e.target.value)}
                       placeholder="Enter first name"
+                      disabled={updating}
                     />
                   </div>
                   <div>
@@ -173,6 +174,7 @@ export default function UserProfile() {
                       value={profile.last_name}
                       onChange={(e) => handleInputChange('last_name', e.target.value)}
                       placeholder="Enter last name"
+                      disabled={updating}
                     />
                   </div>
                 </div>
@@ -185,6 +187,7 @@ export default function UserProfile() {
                     value={profile.library_id}
                     onChange={(e) => handleInputChange('library_id', e.target.value)}
                     placeholder="Enter library ID"
+                    disabled={updating}
                   />
                 </div>
 
@@ -197,6 +200,7 @@ export default function UserProfile() {
                     onChange={(e) => handleInputChange('phone', e.target.value)}
                     placeholder="Enter phone number"
                     type="tel"
+                    disabled={updating}
                   />
                 </div>
 
@@ -209,7 +213,8 @@ export default function UserProfile() {
                     onChange={(e) => handleInputChange('address', e.target.value)}
                     placeholder="Enter address"
                     rows="4"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+                    disabled={updating}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                 </div>
 

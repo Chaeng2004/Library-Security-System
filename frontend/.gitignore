@@ -5,3 +5,5 @@
 .env.test.local
 node_modules
 dist
+PLAN.md
+seed-admin.js
