@@ -15,12 +15,18 @@ function formatDate(dateString) {
 }
 
 function formatSeconds(s) {
+  if (s >= 3600) {
+    const h = Math.floor(s / 3600)
+    const m = Math.floor((s % 3600) / 60)
+    const sec = s % 60
+    return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+  }
   const m = Math.floor(s / 60)
   const sec = s % 60
   return `${m}:${String(sec).padStart(2, '0')}`
 }
 
-const IDLE_MS = 15 * 60 * 1000
+const IDLE_MS = 15 * 60 * 60 * 1000
 const WARNING_MS = 60 * 1000
 
 export default function AdminDashboard() {
@@ -256,6 +262,12 @@ export default function AdminDashboard() {
             className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
           >
             Manage Books
+          </button>
+          <button
+            onClick={() => navigate('/profile')}
+            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
+          >
+            Profile
           </button>
         </div>
       </nav>

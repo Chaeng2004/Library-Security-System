@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { logEvent, AUDIT_EVENTS } from '../lib/audit'
 import { validate, mfaVerifySchema } from '../lib/validation'
@@ -14,6 +14,8 @@ import { Button } from '../components/ui/Button'
 // To look up enrollment logic search for "startEnrollment".
 export default function MfaSetup() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const fromProfile = location.state?.from === 'profile'
   const { refreshAal, user, aal, session } = useAuth()
 
   const [enrollData, setEnrollData] = useState(null)
@@ -23,6 +25,7 @@ export default function MfaSetup() {
   const [serverError, setServerError] = useState('')
   const [loading, setLoading] = useState(false)
   const [enrolling, setEnrolling] = useState(true)
+  const [skipping, setSkipping] = useState(false)
   // [MFA] true when a verified factor already exists — skip enrollment, just challenge.
   const [isReauth, setIsReauth] = useState(false)
 
@@ -114,6 +117,16 @@ export default function MfaSetup() {
     setEnrolling(false)
   }
 
+  // [MFA] handleSkip — unenrolls the pending unverified factor and lets the user proceed
+  // without MFA. Only available during first-time enrollment, not during re-auth.
+  const handleSkip = async () => {
+    setSkipping(true)
+    if (enrollData?.factorId) {
+      await supabase.auth.mfa.unenroll({ factorId: enrollData.factorId }).catch(() => {})
+    }
+    navigate(fromProfile ? '/profile' : '/dashboard', { replace: true })
+  }
+
   // [MFA] [INPUT-VALIDATION] handleVerify — validates the 6-digit code via mfaVerifySchema,
   // then calls mfa.verify(). On success the factor status becomes 'verified' and the
   // session is raised to aal2. Failures are logged via AUDIT_EVENTS.MFA_CHALLENGE_FAILURE.
@@ -141,7 +154,7 @@ export default function MfaSetup() {
 
       await logEvent(AUDIT_EVENTS.MFA_ENROLLED, { factorId: enrollData.factorId })
       await refreshAal()
-      navigate('/dashboard', { replace: true })
+      navigate(fromProfile ? '/profile' : '/dashboard', { replace: true })
     } finally {
       setLoading(false)
     }
@@ -210,6 +223,33 @@ export default function MfaSetup() {
                 <Button type="submit" loading={loading} className="w-full">
                   {isReauth ? 'Verify' : 'Activate authenticator'}
                 </Button>
+                {!isReauth && (
+                  fromProfile ? (
+                    <button
+                      type="button"
+                      onClick={handleSkip}
+                      disabled={skipping}
+                      className="text-sm text-gray-500 hover:text-gray-700 underline text-center disabled:opacity-50"
+                    >
+                      {skipping ? 'Cancelling…' : 'Cancel'}
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleSkip}
+                        disabled={skipping}
+                        className="text-sm text-gray-500 hover:text-gray-700 underline text-center disabled:opacity-50"
+                      >
+                        {skipping ? 'Skipping…' : 'Skip for now'}
+                      </button>
+                      <p className="text-xs text-gray-400 text-center">
+                        You can enable or disable two-factor authentication anytime from your{' '}
+                        <span className="text-gray-500">Profile page</span>.
+                      </p>
+                    </>
+                  )
+                )}
               </form>
             </>
           )}
