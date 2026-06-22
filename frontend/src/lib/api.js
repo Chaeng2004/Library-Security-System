@@ -47,10 +47,7 @@ export async function approveBorrowing(borrowingId, bookId) {
     .select()
   
   if (!error) {
-    await supabase
-      .from('books')
-      .update({ available: false })
-      .eq('id', bookId)
+    await supabase.rpc('update_book_availability', { p_book_id: bookId, p_available: false })
   }
   
   return { data, error }
@@ -73,10 +70,7 @@ export async function returnBook(borrowingId, bookId) {
     .select()
   
   if (!error) {
-    await supabase
-      .from('books')
-      .update({ available: true })
-      .eq('id', bookId)
+    await supabase.rpc('update_book_availability', { p_book_id: bookId, p_available: true })
   }
   
   return { data, error }
@@ -92,6 +86,14 @@ export async function getUserBorrowings(userId) {
 }
 
 // Admin API
+export async function addBook(book) {
+  const { data, error } = await supabase
+    .from('books')
+    .insert([{ ...book, available: true }])
+    .select()
+  return { data, error }
+}
+
 export async function getPendingBorrowings() {
   const { data, error } = await supabase
     .from('borrowings_with_email')

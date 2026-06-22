@@ -267,14 +267,13 @@ export default function Books() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {books.map((book) => {
-              const cover = getBookCover(book.title)
               return (
               <Card key={book.id} className="flex flex-col hover:shadow-md transition-shadow">
                 <div className="flex gap-4 flex-1 min-h-0 mb-4">
-                  {(book.cover_url || cover) ? (
-                    <div className="shrink-0 w-20 h-[120px] rounded-md overflow-hidden bg-gray-50">
+                  {(book.cover_url || getBookCover(book.title)) && (
+                    <div className="flex-shrink-0 w-20 h-[120px] rounded-md overflow-hidden bg-gray-50">
                       <img
-                        src={book.cover_url || cover}
+                        src={book.cover_url || getBookCover(book.title)}
                         alt={`${book.title} cover`}
                         className="w-full h-full object-contain"
                       />

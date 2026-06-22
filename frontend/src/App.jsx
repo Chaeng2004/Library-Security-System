@@ -5,6 +5,7 @@ import Register from './pages/Register'
 import MfaSetup from './pages/MfaSetup'
 import Dashboard from './pages/Dashboard'
 import AdminDashboard from './pages/AdminDashboard'
+import AdminBooks from './pages/AdminBooks'
 import Books from './pages/Books'
 import MyBorrowings from './pages/MyBorrowings'
 import UserProfile from './pages/UserProfile'
@@ -15,6 +16,14 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/mfa-setup" element={<MfaSetup />} />
+      <Route
+        path="/admin/books"
+        element={
+          <ProtectedRoute adminOnly>
+            <AdminBooks />
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/admin"
         element={
