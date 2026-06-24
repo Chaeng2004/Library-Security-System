@@ -95,22 +95,22 @@ export async function addBook(book) {
   return { data, error }
 }
 
-export async function updateBook(id, updates) {
+/*export async function updateBook(id, updates) {
   const { data, error } = await supabase
     .from('books')
     .update(updates)
     .eq('id', id)
     .select()
   return { data, error }
-}
+}*/
 
-export async function deleteBook(id) {
+/*export async function deleteBook(id) {
   const { error } = await supabase
     .from('books')
     .delete()
     .eq('id', id)
   return { error }
-}
+}*/
 
 export async function getPendingBorrowings() {
   await supabase.rpc('penalize_overdue_borrowings')
