@@ -94,6 +94,23 @@ export async function addBook(book) {
   return { data, error }
 }
 
+export async function updateBook(id, updates) {
+  const { data, error } = await supabase
+    .from('books')
+    .update(updates)
+    .eq('id', id)
+    .select()
+  return { data, error }
+}
+
+export async function deleteBook(id) {
+  const { error } = await supabase
+    .from('books')
+    .delete()
+    .eq('id', id)
+  return { error }
+}
+
 export async function getPendingBorrowings() {
   const { data, error } = await supabase
     .from('borrowings_with_email')
@@ -188,22 +205,4 @@ export async function getUserRecentBorrowings(userId, limit = 3) {
     .order('returned_date', { ascending: false })
     .limit(limit)
   return { data, error }
-}
-
-// Book management (admin)
-export async function updateBook(id, updates) {
-  const { data, error } = await supabase
-    .from('books')
-    .update(updates)
-    .eq('id', id)
-    .select()
-  return { data, error }
-}
-
-export async function deleteBook(id) {
-  const { error } = await supabase
-    .from('books')
-    .delete()
-    .eq('id', id)
-  return { error }
 }
