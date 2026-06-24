@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { getBooks, addBook } from '../lib/api'
+import { getBooks, addBook, updateBook, deleteBook } from '../lib/api'
 import { supabase } from '../lib/supabaseClient'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
@@ -17,6 +17,8 @@ export default function AdminBooks() {
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [showModal, setShowModal] = useState(false)
+  const [editingBook, setEditingBook] = useState(null)
+  const [confirmDelete, setConfirmDelete] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
   const [coverFile, setCoverFile] = useState(null)
   const [coverPreview, setCoverPreview] = useState(null)
@@ -46,6 +48,29 @@ export default function AdminBooks() {
     setCoverPreview(URL.createObjectURL(file))
   }
 
+  const handleEdit = (book) => {
+    setEditingBook(book)
+    setForm({
+      title: book.title,
+      author: book.author,
+      isbn: book.isbn || '',
+      description: book.description || '',
+      cover_url: book.cover_url || ''
+    })
+    if (book.cover_url) setCoverPreview(book.cover_url)
+    setShowModal(true)
+  }
+
+  const handleDelete = async (book) => {
+    const { error } = await deleteBook(book.id)
+    if (error) {
+      alert('Failed to delete: ' + error.message)
+    } else {
+      fetchBooks()
+      setConfirmDelete(null)
+    }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setFormError('')
@@ -55,7 +80,7 @@ export default function AdminBooks() {
     }
 
     setSaving(true)
-    let cover_url = ''
+    let cover_url = form.cover_url
 
     if (coverFile) {
       const ext = coverFile.name.split('.').pop()
@@ -74,21 +99,36 @@ export default function AdminBooks() {
       cover_url = urlData.publicUrl
     }
 
-    const { error } = await addBook({ ...form, cover_url })
-    if (error) {
-      setFormError('Failed to add book: ' + error.message)
+    if (editingBook) {
+      const { error } = await updateBook(editingBook.id, { ...form, cover_url })
+      if (error) {
+        setFormError('Failed to update book: ' + error.message)
+      } else {
+        setShowModal(false)
+        setEditingBook(null)
+        setForm(EMPTY_FORM)
+        setCoverFile(null)
+        setCoverPreview(null)
+        fetchBooks()
+      }
     } else {
-      setShowModal(false)
-      setForm(EMPTY_FORM)
-      setCoverFile(null)
-      setCoverPreview(null)
-      fetchBooks()
+      const { error } = await addBook({ ...form, cover_url })
+      if (error) {
+        setFormError('Failed to add book: ' + error.message)
+      } else {
+        setShowModal(false)
+        setForm(EMPTY_FORM)
+        setCoverFile(null)
+        setCoverPreview(null)
+        fetchBooks()
+      }
     }
     setSaving(false)
   }
 
   const handleCloseModal = () => {
     setShowModal(false)
+    setEditingBook(null)
     setForm(EMPTY_FORM)
     setCoverFile(null)
     setCoverPreview(null)
@@ -97,11 +137,11 @@ export default function AdminBooks() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Add Book Modal */}
+      {/* Add/Edit Book Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Add New Book</h2>
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">{editingBook ? 'Edit Book' : 'Add New Book'}</h2>
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <TextInput
                 label="Title"
@@ -156,9 +196,35 @@ export default function AdminBooks() {
                 >
                   Cancel
                 </button>
-                <Button type="submit" loading={saving}>Add Book</Button>
+                <Button type="submit" loading={saving}>{editingBook ? 'Update Book' : 'Add Book'}</Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {confirmDelete && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
+            <h2 className="text-base font-semibold text-gray-900">Delete book?</h2>
+            <p className="mt-2 text-sm text-gray-500">
+              This will permanently delete "<span className="font-medium">{confirmDelete.title}</span>" from the library.
+            </p>
+            <div className="mt-5 flex gap-3 justify-end">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDelete(confirmDelete)}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md transition"
+              >
+                Delete
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -194,12 +260,6 @@ export default function AdminBooks() {
             className="px-4 py-2 text-sm font-medium text-gray-900 bg-gray-100 rounded-md"
           >
             Manage Books
-          </button>
-          <button
-            onClick={() => navigate('/profile')}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
-          >
-            Profile
           </button>
         </div>
       </nav>
@@ -248,6 +308,21 @@ export default function AdminBooks() {
                       </span>
                     </div>
                   </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => handleEdit(book)}
+                    variant="secondary"
+                    className="flex-1 text-sm"
+                  >
+                    Edit
+                  </Button>
+                  <button
+                    onClick={() => setConfirmDelete(book)}
+                    className="px-3 py-2 text-sm font-medium text-red-600 bg-red-50 border border-red-200 rounded-md hover:bg-red-100 transition"
+                  >
+                    Delete
+                  </button>
                 </div>
               </Card>
             ))}
