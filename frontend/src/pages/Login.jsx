@@ -32,15 +32,16 @@ function EyeToggle({ show, onToggle }) {
 
 export default function Login() {
   const navigate = useNavigate()
-  const { signIn, refreshAal, session, aal } = useAuth()
+  const { signIn, refreshAal, session, aal, nextAal } = useAuth()
 
   useEffect(() => {
     if (session === undefined) return
     if (!session) return
     if (aal === null) return
     if (aal === 'aal2') navigate('/dashboard', { replace: true })
-    else navigate('/mfa-setup', { replace: true })
-  }, [session, aal]) // eslint-disable-line react-hooks/exhaustive-deps
+    else if (nextAal === 'aal2') navigate('/mfa-setup', { replace: true })
+    else navigate('/dashboard', { replace: true })
+  }, [session, aal, nextAal]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [step, setStep] = useState('password')
 
@@ -93,7 +94,14 @@ export default function Login() {
         setMfaState({ factorId: totp.id, challengeId: challenge.id })
         setStep('totp')
       } else {
-        navigate('/mfa-setup', { replace: true })
+        // Only prompt for MFA setup on the very first sign-in; skip to dashboard on subsequent logins
+        const promptKey = `mfa_setup_prompted_${data.user.id}`
+        if (!localStorage.getItem(promptKey)) {
+          localStorage.setItem(promptKey, 'true')
+          navigate('/mfa-setup', { replace: true })
+        } else {
+          navigate('/dashboard', { replace: true })
+        }
       }
     } finally {
       setLoading(false)
@@ -161,17 +169,27 @@ export default function Login() {
                 error={errors.email}
                 placeholder="you@example.com"
               />
-              <TextInput
-                id="password"
-                label="Password"
-                type={showPassword ? 'text' : 'password'}
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                error={errors.password}
-                placeholder="••••••••"
-                rightSlot={<EyeToggle show={showPassword} onToggle={() => setShowPassword((v) => !v)} />}
-              />
+              <div>
+                <TextInput
+                  id="password"
+                  label="Password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  error={errors.password}
+                  placeholder="••••••••"
+                  rightSlot={<EyeToggle show={showPassword} onToggle={() => setShowPassword((v) => !v)} />}
+                />
+                <div className="mt-1 text-right">
+                  <Link
+                    to="/forgot-password"
+                    className="text-xs text-gray-500 hover:text-gray-700 underline underline-offset-2"
+                  >
+                    Forgot your password?
+                  </Link>
+                </div>
+              </div>
               {serverError && (
                 <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
                   {serverError}

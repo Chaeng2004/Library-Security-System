@@ -7,10 +7,16 @@ import { getUserActiveBorrowings, getUserPendingBorrowings, getUserRecentBorrowi
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 
-const IDLE_MS = 15 * 60 * 1000
+const IDLE_MS = 15 * 60 * 60 * 1000
 const WARNING_MS = 60 * 1000
 
 function formatSeconds(s) {
+  if (s >= 3600) {
+    const h = Math.floor(s / 3600)
+    const m = Math.floor((s % 3600) / 60)
+    const sec = s % 60
+    return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+  }
   const m = Math.floor(s / 60)
   const sec = s % 60
   return `${m}:${String(sec).padStart(2, '0')}`
@@ -26,9 +32,12 @@ const EVENT_LABELS = {
   MFA_ENROLLED: 'MFA enrolled',
   MFA_CHALLENGE_SUCCESS: 'MFA verified',
   MFA_CHALLENGE_FAILURE: 'MFA failed',
+  MFA_DISABLED: 'MFA disabled',
   LOGOUT: 'Signed out',
   SESSION_TIMEOUT: 'Session timed out',
   USER_REGISTERED: 'Account registered',
+  PASSWORD_RESET_REQUESTED: 'Password reset requested',
+  PASSWORD_RESET_SUCCESS: 'Password reset',
 }
 
 function StatCard({ label, value, helper }) {

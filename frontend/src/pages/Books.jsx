@@ -270,7 +270,7 @@ export default function Books() {
               return (
               <Card key={book.id} className="flex flex-col hover:shadow-md transition-shadow">
                 <div className="flex gap-4 flex-1 min-h-0 mb-4">
-                  {(book.cover_url || getBookCover(book.title)) && (
+                  {(book.cover_url || getBookCover(book.title)) ? (
                     <div className="flex-shrink-0 w-20 h-[120px] rounded-md overflow-hidden bg-gray-50">
                       <img
                         src={book.cover_url || getBookCover(book.title)}

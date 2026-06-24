@@ -48,6 +48,18 @@ export const registerSchema = z
     path: ['confirmPassword'],
   })
 
+export const forgotPasswordSchema = z.object({ email: emailSchema })
+
+export const resetPasswordSchema = z
+  .object({
+    password: passwordSchema,
+    confirmPassword: z.string().min(1, 'Please confirm your password'),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  })
+
 // [INPUT-VALIDATION] validate — runs a Zod schema and returns a flat { field: message }
 // error map so form fields can display per-field errors without extra parsing.
 export function validate(schema, data) {

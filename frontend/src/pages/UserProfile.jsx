@@ -1,15 +1,18 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import { getUserProfile, updateUserProfile } from '../lib/api'
+import { logEvent, AUDIT_EVENTS } from '../lib/audit'
+import { validate, mfaVerifySchema } from '../lib/validation'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { TextInput } from '../components/ui/TextInput'
 
 export default function UserProfile() {
   const navigate = useNavigate()
-  const { user, signOut } = useAuth()
-  
+  const { user, role, signOut, refreshAal } = useAuth()
+
   const [profile, setProfile] = useState({
     first_name: '',
     last_name: '',
@@ -21,13 +24,31 @@ export default function UserProfile() {
   const [updating, setUpdating] = useState(false)
   const [message, setMessage] = useState('')
 
+  // MFA state
+  const [mfaFactor, setMfaFactor] = useState(null)
+  const [mfaLoading, setMfaLoading] = useState(true)
+  const [showDisableConfirm, setShowDisableConfirm] = useState(false)
+  const [disableCode, setDisableCode] = useState('')
+  const [disableErrors, setDisableErrors] = useState({})
+  const [disableServerError, setDisableServerError] = useState('')
+  const [disabling, setDisabling] = useState(false)
+
+  const fetchMfaStatus = useCallback(async () => {
+    setMfaLoading(true)
+    const { data } = await supabase.auth.mfa.listFactors()
+    const verified = data?.totp?.find((f) => f.status === 'verified') ?? null
+    setMfaFactor(verified)
+    setMfaLoading(false)
+  }, [])
+
   useEffect(() => {
     fetchProfile()
-  }, [])
+    fetchMfaStatus()
+  }, [fetchMfaStatus])
 
   const fetchProfile = async () => {
     setLoading(true)
-    const { data, error } = await getUserProfile(user.id)
+    const { data } = await getUserProfile(user.id)
     if (data) {
       setProfile({
         first_name: data.first_name || '',
@@ -38,6 +59,50 @@ export default function UserProfile() {
       })
     }
     setLoading(false)
+  }
+
+  const handleDisableMfa = async (e) => {
+    e.preventDefault()
+    setDisableServerError('')
+
+    const { data: parsed, errors: validationErrors } = validate(mfaVerifySchema, { code: disableCode })
+    if (validationErrors) { setDisableErrors(validationErrors); return }
+    setDisableErrors({})
+
+    setDisabling(true)
+    try {
+      const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({
+        factorId: mfaFactor.id,
+      })
+      if (challengeError) {
+        setDisableServerError('Failed to verify identity. Please try again.')
+        return
+      }
+
+      const { error: verifyError } = await supabase.auth.mfa.verify({
+        factorId: mfaFactor.id,
+        challengeId: challenge.id,
+        code: parsed.code,
+      })
+      if (verifyError) {
+        setDisableServerError('Invalid code. Please try again.')
+        return
+      }
+
+      const { error: unenrollError } = await supabase.auth.mfa.unenroll({ factorId: mfaFactor.id })
+      if (unenrollError) {
+        setDisableServerError('Failed to disable MFA. Please try again.')
+        return
+      }
+
+      await logEvent(AUDIT_EVENTS.MFA_DISABLED, { factorId: mfaFactor.id })
+      await refreshAal()
+      setShowDisableConfirm(false)
+      setDisableCode('')
+      await fetchMfaStatus()
+    } finally {
+      setDisabling(false)
+    }
   }
 
   const handleInputChange = (field, value) => {
@@ -89,24 +154,43 @@ export default function UserProfile() {
       {/* Navigation */}
       <nav className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex gap-4">
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
-          >
-            Dashboard
-          </button>
-          <button
-            onClick={() => navigate('/books')}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
-          >
-            Browse Books
-          </button>
-          <button
-            onClick={() => navigate('/my-borrowings')}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
-          >
-            My Borrowings
-          </button>
+          {role === 'admin' ? (
+            <>
+              <button
+                onClick={() => navigate('/admin')}
+                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
+              >
+                Admin Dashboard
+              </button>
+              <button
+                onClick={() => navigate('/admin/books')}
+                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
+              >
+                Manage Books
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => navigate('/dashboard')}
+                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
+              >
+                Dashboard
+              </button>
+              <button
+                onClick={() => navigate('/books')}
+                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
+              >
+                Browse Books
+              </button>
+              <button
+                onClick={() => navigate('/my-borrowings')}
+                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
+              >
+                My Borrowings
+              </button>
+            </>
+          )}
           <button
             onClick={() => navigate('/profile')}
             className="px-4 py-2 text-sm font-medium text-gray-900 bg-gray-100 rounded-md"
@@ -132,6 +216,75 @@ export default function UserProfile() {
                 <p className="mt-1 text-gray-600 text-xs break-all">{user?.id}</p>
               </div>
             </div>
+          </Card>
+
+          {/* Two-Factor Authentication */}
+          <Card className="mb-8">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Two-Factor Authentication</h2>
+            {mfaLoading ? (
+              <p className="text-sm text-gray-500">Loading…</p>
+            ) : mfaFactor ? (
+              <>
+                <p className="text-sm text-gray-700 mb-4">
+                  Two-factor authentication is <span className="font-medium text-green-700">enabled</span>.
+                  Your account is protected by a TOTP authenticator app.
+                </p>
+                {!showDisableConfirm ? (
+                  <Button
+                    variant="danger"
+                    onClick={() => { setShowDisableConfirm(true); setDisableServerError(''); setDisableCode('') }}
+                  >
+                    Disable two-factor authentication
+                  </Button>
+                ) : (
+                  <form onSubmit={handleDisableMfa} className="flex flex-col gap-4" noValidate>
+                    <p className="text-sm text-gray-600">
+                      Enter your current 6-digit authenticator code to confirm.
+                    </p>
+                    <TextInput
+                      id="disable-totp-code"
+                      label="Verification code"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      value={disableCode}
+                      onChange={(e) => setDisableCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      error={disableErrors.code}
+                      placeholder="000000"
+                      className="text-center tracking-widest text-lg"
+                    />
+                    {disableServerError && (
+                      <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                        {disableServerError}
+                      </p>
+                    )}
+                    <div className="flex gap-3">
+                      <Button type="submit" loading={disabling} variant="danger">
+                        Confirm disable
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={disabling}
+                        onClick={() => { setShowDisableConfirm(false); setDisableCode(''); setDisableErrors({}) }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </form>
+                )}
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-gray-700 mb-4">
+                  Two-factor authentication is <span className="font-medium text-gray-500">not enabled</span>.
+                  Add an extra layer of security to your account.
+                </p>
+                <Button onClick={() => navigate('/mfa-setup', { state: { from: 'profile' } })}>
+                  Enable two-factor authentication
+                </Button>
+              </>
+            )}
           </Card>
 
           {/* Profile Information */}

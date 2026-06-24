@@ -191,14 +191,6 @@ export async function getUserRecentBorrowings(userId, limit = 3) {
 }
 
 // Book management (admin)
-export async function addBook(book) {
-  const { data, error } = await supabase
-    .from('books')
-    .insert([book])
-    .select()
-  return { data, error }
-}
-
 export async function updateBook(id, updates) {
   const { data, error } = await supabase
     .from('books')

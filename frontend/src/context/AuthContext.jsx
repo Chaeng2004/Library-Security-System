@@ -11,8 +11,10 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [role, setRole] = useState(null)
   // [MFA] aal1 = password only; aal2 = password + verified TOTP factor.
-  // ProtectedRoute blocks dashboard access until aal2 is confirmed.
+  // nextAal = 'aal2' when a verified factor exists but hasn't been satisfied this session.
+  // ProtectedRoute enforces MFA only when nextAal === 'aal2' (user is enrolled).
   const [aal, setAal] = useState(null)
+  const [nextAal, setNextAal] = useState(null)
 
   // [MFA] refreshAal — re-reads the server-side Authenticator Assurance Level after
   // every auth state change so ProtectedRoute always reflects the real AAL.
@@ -24,6 +26,7 @@ export function AuthProvider({ children }) {
       return
     }
     setAal(data?.currentLevel ?? null)
+    setNextAal(data?.nextLevel ?? null)
   }, [])
 
   const fetchRole = useCallback(async (userId) => {
@@ -37,14 +40,14 @@ export function AuthProvider({ children }) {
       setSession(s)
       setUser(s?.user ?? null)
       if (s) { refreshAal(); fetchRole(s.user.id) }
-      else { setAal(null); setRole(null) }
+      else { setAal(null); setNextAal(null); setRole(null) }
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s)
       setUser(s?.user ?? null)
       if (s) { refreshAal(); fetchRole(s.user.id) }
-      else { setAal(null); setRole(null) }
+      else { setAal(null); setNextAal(null); setRole(null) }
     })
 
     return () => subscription.unsubscribe()
@@ -69,7 +72,7 @@ export function AuthProvider({ children }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ session, user, role, aal, refreshAal, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ session, user, role, aal, nextAal, refreshAal, signIn, signUp, signOut }}>
       {children}
     </AuthContext.Provider>
   )
