@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { logEvent, AUDIT_EVENTS } from '../lib/audit'
@@ -31,20 +31,11 @@ export default function MfaSetup() {
 
   const enrollStarted = useRef(false)
 
-  useEffect(() => {
-    if (session === undefined) return
-    if (!session) { navigate('/login', { replace: true }); return }
-    if (aal === 'aal2') { navigate('/dashboard', { replace: true }); return }
-    if (enrollStarted.current) return
-    enrollStarted.current = true
-    startEnrollment()
-  }, [session, aal]) // eslint-disable-line react-hooks/exhaustive-deps
-
   // [MFA] startEnrollment — ISO 27001 A.9.4. Handles two cases:
   // 1. No verified factor → enroll a new TOTP factor (shows QR code).
   // 2. Verified factor already exists → issue a challenge directly (re-authentication).
   // To change the TOTP issuer name search for "issuer:" in this function.
-  const startEnrollment = async () => {
+  const startEnrollment = useCallback(async () => {
     setEnrolling(true)
 
     const { data: existing, error: listError } = await supabase.auth.mfa.listFactors()
@@ -115,7 +106,16 @@ export default function MfaSetup() {
     setEnrollData({ factorId: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret })
     setChallengeId(challenge.id)
     setEnrolling(false)
-  }
+  }, [navigate])
+
+  useEffect(() => {
+    if (session === undefined) return
+    if (!session) { navigate('/login', { replace: true }); return }
+    if (aal === 'aal2') { navigate('/dashboard', { replace: true }); return }
+    if (enrollStarted.current) return
+    enrollStarted.current = true
+    startEnrollment()
+  }, [session, aal, navigate, startEnrollment])
 
   // [MFA] handleSkip — unenrolls the pending unverified factor and lets the user proceed
   // without MFA. Only available during first-time enrollment, not during re-auth.

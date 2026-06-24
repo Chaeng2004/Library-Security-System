@@ -7,7 +7,6 @@ import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
 import Dashboard from './pages/Dashboard'
 import AdminDashboard from './pages/AdminDashboard'
-import AdminBooks from './pages/AdminBooks'
 import Books from './pages/Books'
 import MyBorrowings from './pages/MyBorrowings'
 import UserProfile from './pages/UserProfile'
@@ -24,7 +23,7 @@ export default function App() {
         path="/admin/books"
         element={
           <ProtectedRoute adminOnly>
-            <AdminBooks />
+            <Navigate to="/admin?tab=books" replace />
           </ProtectedRoute>
         }
       />

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react'
 
 // [SESSION-TIMEOUT] ISO 27001 A.9.4.2 — Terminates the session after idleMs of
 // inactivity to prevent unauthorized access to unattended sessions.
@@ -14,10 +14,15 @@ const ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scr
 export function useIdleTimeout(onTimeout, idleMs = 15 * 60 * 60 * 1000, warningMs = 60 * 1000) {
   const [secondsLeft, setSecondsLeft] = useState(Math.floor(idleMs / 1000))
   const [isWarning, setIsWarning] = useState(false)
-  const timerRef = useRef(null)
   const intervalRef = useRef(null)
-  const deadlineRef = useRef(Date.now() + idleMs)
+  const deadlineRef = useRef(0)
   const onTimeoutRef = useRef(onTimeout)
+
+  // [SESSION-TIMEOUT] Initialise the deadline synchronously before first paint to
+  // avoid calling Date.now() during render (which would be an impure render call).
+  useLayoutEffect(() => {
+    if (!deadlineRef.current) deadlineRef.current = Date.now() + idleMs
+  }, [idleMs])
 
   useEffect(() => { onTimeoutRef.current = onTimeout }, [onTimeout])
 
@@ -45,7 +50,6 @@ export function useIdleTimeout(onTimeout, idleMs = 15 * 60 * 60 * 1000, warningM
     return () => {
       ACTIVITY_EVENTS.forEach((e) => window.removeEventListener(e, resetTimer))
       clearInterval(intervalRef.current)
-      clearTimeout(timerRef.current)
     }
   }, [resetTimer, warningMs])
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { getBooks, addBook, updateBook, deleteBook } from '../lib/api'
@@ -25,14 +25,15 @@ export default function AdminBooks() {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
 
-  useEffect(() => { fetchBooks() }, [])
-
-  const fetchBooks = async () => {
+  const fetchBooks = useCallback(async () => {
     setLoading(true)
     const { data } = await getBooks()
     setBooks(data || [])
     setLoading(false)
-  }
+  }, [])
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { fetchBooks() }, [fetchBooks])
 
   const handleSearch = async (value) => {
     setSearchTerm(value)

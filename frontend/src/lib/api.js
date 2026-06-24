@@ -77,6 +77,7 @@ export async function returnBook(borrowingId, bookId) {
 }
 
 export async function getUserBorrowings(userId) {
+  await supabase.rpc('penalize_overdue_borrowings')
   const { data, error } = await supabase
     .from('borrowings')
     .select('*, books(*)')
@@ -112,6 +113,7 @@ export async function deleteBook(id) {
 }
 
 export async function getPendingBorrowings() {
+  await supabase.rpc('penalize_overdue_borrowings')
   const { data, error } = await supabase
     .from('borrowings_with_email')
     .select('*, books(*)')
@@ -121,6 +123,7 @@ export async function getPendingBorrowings() {
 }
 
 export async function getAllBorrowings() {
+  await supabase.rpc('penalize_overdue_borrowings')
   const { data, error } = await supabase
     .from('borrowings_with_email')
     .select('*, books(*)')
@@ -175,8 +178,30 @@ export async function getAllUsers() {
   return { data, error }
 }
 
+export async function getUserEmailsByIds(userIds = []) {
+  if (!userIds.length) return { data: {}, error: null }
+
+  const { data, error } = await supabase
+    .from('audit_logs')
+    .select('user_id, user_email, created_at')
+    .in('user_id', userIds)
+    .not('user_email', 'is', null)
+    .order('created_at', { ascending: false })
+
+  if (error) return { data: {}, error }
+
+  const emailByUserId = {}
+  for (const row of data ?? []) {
+    if (!row.user_id || emailByUserId[row.user_id]) continue
+    emailByUserId[row.user_id] = row.user_email
+  }
+
+  return { data: emailByUserId, error: null }
+}
+
 // Dashboard stats
 export async function getUserActiveBorrowings(userId) {
+  await supabase.rpc('penalize_overdue_borrowings')
   const { data, error } = await supabase
     .from('borrowings')
     .select('*, books(*)')
@@ -205,4 +230,31 @@ export async function getUserRecentBorrowings(userId, limit = 3) {
     .order('returned_date', { ascending: false })
     .limit(limit)
   return { data, error }
+}
+
+export async function updateUserCreditScore(userId, newScore) {
+  const { data, error } = await supabase
+    .from('user_profiles')
+    .update({ credit_score: newScore })
+    .eq('id', userId)
+    .select()
+  return { data, error }
+}
+
+// Book management (admin)
+export async function updateBook(id, updates) {
+  const { data, error } = await supabase
+    .from('books')
+    .update(updates)
+    .eq('id', id)
+    .select()
+  return { data, error }
+}
+
+export async function deleteBook(id) {
+  const { error } = await supabase
+    .from('books')
+    .delete()
+    .eq('id', id)
+  return { error }
 }

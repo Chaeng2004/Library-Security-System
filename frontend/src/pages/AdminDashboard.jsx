@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useIdleTimeout } from '../hooks/useIdleTimeout'
-import { getPendingBorrowings, getAllBorrowings, approveBorrowing, rejectBorrowing, returnBook, getBooks, addBook, updateBook, deleteBook } from '../lib/api'
+import { getPendingBorrowings, getAllBorrowings, approveBorrowing, rejectBorrowing, returnBook, getBooks, addBook, updateBook, deleteBook, getAllUsers, getUserEmailsByIds, updateUserCreditScore } from '../lib/api'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { TextInput } from '../components/ui/TextInput'
+
+const VALID_TABS = new Set(['pending', 'all', 'books', 'users'])
 
 function formatDate(dateString) {
   if (!dateString) return 'N/A'
@@ -31,13 +33,15 @@ const WARNING_MS = 60 * 1000
 
 export default function AdminDashboard() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { user, signOut } = useAuth()
 
   const [pendingBorrowings, setPendingBorrowings] = useState([])
   const [allBorrowings, setAllBorrowings] = useState([])
   const [loading, setLoading] = useState(true)
   const [actionStatus, setActionStatus] = useState({})
-  const [activeTab, setActiveTab] = useState('pending')
+  const currentTab = searchParams.get('tab')
+  const activeTab = VALID_TABS.has(currentTab) ? currentTab : 'pending'
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [confirmAction, setConfirmAction] = useState(null)
 
@@ -49,23 +53,55 @@ export default function AdminDashboard() {
   const [showBookForm, setShowBookForm] = useState(false)
   const [bookActionStatus, setBookActionStatus] = useState('')
 
-  const fetchData = useCallback(async () => {
-    setLoading(true)
+  // Users management state
+  const [usersList, setUsersList] = useState([])
+  const [usersLoading, setUsersLoading] = useState(false)
+  const [editingUser, setEditingUser] = useState(null)
+  const [creditFormScore, setCreditFormScore] = useState(100)
+
+  const fetchData = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoading(true)
     const [pending, all] = await Promise.all([getPendingBorrowings(), getAllBorrowings()])
     setPendingBorrowings(pending.data || [])
     setAllBorrowings(all.data || [])
     setLoading(false)
   }, [])
 
-  const fetchBooks = useCallback(async () => {
-    setBooksLoading(true)
+  const fetchBooks = useCallback(async (showLoading = false) => {
+    if (showLoading) setBooksLoading(true)
     const { data } = await getBooks()
     setBooks(data || [])
     setBooksLoading(false)
   }, [])
 
-  useEffect(() => { fetchData() }, [fetchData])
-  useEffect(() => { if (activeTab === 'books') fetchBooks() }, [activeTab, fetchBooks])
+  const fetchUsers = useCallback(async (showLoading = false) => {
+    if (showLoading) setUsersLoading(true)
+    const { data } = await getAllUsers()
+    const profiles = data || []
+    const { data: emailMap } = await getUserEmailsByIds(profiles.map((u) => u.id))
+    setUsersList(
+      profiles.map((u) => ({
+        ...u,
+        email: u.email || emailMap?.[u.id] || null,
+      }))
+    )
+    setUsersLoading(false)
+  }, [])
+
+  const setTab = (tab) => {
+    const next = new URLSearchParams(searchParams)
+    if (tab === 'pending') next.delete('tab')
+    else next.set('tab', tab)
+    setSearchParams(next, { replace: true })
+  }
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { fetchData(false) }, [fetchData])
+  useEffect(() => { 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (activeTab === 'books') fetchBooks(false) 
+    else if (activeTab === 'users') fetchUsers(false)
+  }, [activeTab, fetchBooks, fetchUsers])
 
   const handleTimeout = useCallback(async () => {
     await signOut('timeout')
@@ -155,6 +191,20 @@ export default function AdminDashboard() {
     setEditingBook(book)
     setBookForm({ title: book.title, author: book.author, isbn: book.isbn || '', description: book.description || '', available: book.available, cover_url: book.cover_url || '' })
     setShowBookForm(true)
+  }
+
+  const handleCreditUpdateSubmit = async () => {
+    if (creditFormScore < 0 || creditFormScore > 200) {
+      alert('Credit score must be between 0 and 200')
+      return
+    }
+    const { error } = await updateUserCreditScore(editingUser.id, creditFormScore)
+    if (error) {
+      alert('Failed to update credit score: ' + error.message)
+    } else {
+      setEditingUser(null)
+      fetchUsers(false)
+    }
   }
 
   const statusBadge = (status) => {
@@ -294,22 +344,28 @@ export default function AdminDashboard() {
         {/* Tabs */}
         <div className="flex gap-2 mb-6 flex-wrap">
           <button
-            onClick={() => setActiveTab('pending')}
+            onClick={() => setTab('pending')}
             className={`px-4 py-2 text-sm font-medium rounded-md transition ${activeTab === 'pending' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}
           >
             Pending Requests ({pendingBorrowings.length})
           </button>
           <button
-            onClick={() => setActiveTab('all')}
+            onClick={() => setTab('all')}
             className={`px-4 py-2 text-sm font-medium rounded-md transition ${activeTab === 'all' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}
           >
             All Borrowings
           </button>
           <button
-            onClick={() => setActiveTab('books')}
+            onClick={() => setTab('books')}
             className={`px-4 py-2 text-sm font-medium rounded-md transition ${activeTab === 'books' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}
           >
             Manage Books
+          </button>
+          <button
+            onClick={() => setTab('users')}
+            className={`px-4 py-2 text-sm font-medium rounded-md transition ${activeTab === 'users' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}
+          >
+            Users & Credits
           </button>
         </div>
 
@@ -513,7 +569,103 @@ export default function AdminDashboard() {
             )}
           </div>
         )}
+
+        {!loading && activeTab === 'users' && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold text-gray-900">Registered Users ({usersList.length})</h2>
+            </div>
+            
+            {usersLoading ? (
+              <div className="flex justify-center items-center h-32">
+                <div className="animate-spin h-8 w-8 border-4 border-gray-200 border-t-gray-900 rounded-full" />
+              </div>
+            ) : usersList.length === 0 ? (
+              <Card className="text-center py-12">
+                <p className="text-gray-500">No users found.</p>
+              </Card>
+            ) : (
+              <div className="grid gap-3">
+                {usersList.map(usr => (
+                  <Card key={usr.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-gray-900 truncate">
+                          {usr.first_name || usr.last_name ? `${usr.first_name} ${usr.last_name}` : 'No Profile Name'}
+                        </span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                          usr.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {usr.role}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-0.5">Email: {usr.email || 'Unavailable'}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">Library ID: {usr.library_id || 'N/A'}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">User ID: {usr.id}</p>
+                    </div>
+                    <div className="flex items-center gap-6 shrink-0">
+                      <div className="text-right">
+                        <span className="text-xs text-gray-500 block">Credit Score</span>
+                        <span className="text-sm font-bold text-gray-900 block mt-0.5">{usr.credit_score ?? 100} / 200</span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setEditingUser(usr)
+                          setCreditFormScore(usr.credit_score ?? 100)
+                        }}
+                        className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition"
+                      >
+                        Adjust Credit
+                      </button>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </main>
+
+      {/* Edit Credit Modal */}
+      {editingUser && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
+            <h2 className="text-base font-bold text-gray-900">Adjust Credit Score</h2>
+            <p className="mt-2 text-xs text-gray-500">
+              User: <span className="font-semibold text-gray-700">{editingUser.first_name || editingUser.last_name ? `${editingUser.first_name} ${editingUser.last_name}` : editingUser.id}</span>
+            </p>
+            
+            <div className="my-5">
+              <label className="text-xs font-medium text-gray-700 block mb-1">
+                Credit Score (0 - 200)
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="200"
+                value={creditFormScore}
+                onChange={e => setCreditFormScore(parseInt(e.target.value) || 0)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+              />
+              <p className="text-[10px] text-gray-400 mt-1">
+                Adjusting this will change the user's maximum book borrowing capacity.
+              </p>
+            </div>
+
+            <div className="flex gap-3 justify-end pt-2">
+              <button
+                onClick={() => setEditingUser(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition"
+              >
+                Cancel
+              </button>
+              <Button onClick={handleCreditUpdateSubmit}>
+                Save Score
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
