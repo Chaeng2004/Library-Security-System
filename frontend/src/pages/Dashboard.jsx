@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import { useIdleTimeout } from '../hooks/useIdleTimeout'
-import { getUserActiveBorrowings, getUserPendingBorrowings, getUserRecentBorrowings } from '../lib/api'
+import { getUserActiveBorrowings, getUserPendingBorrowings, getUserRecentBorrowings, getUserProfile } from '../lib/api'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 
@@ -40,6 +40,15 @@ const EVENT_LABELS = {
   PASSWORD_RESET_SUCCESS: 'Password reset',
 }
 
+function getCreditTier(score) {
+  if (score >= 180) return { name: 'Excellent', color: 'text-green-700 bg-green-50 border-green-200' }
+  if (score >= 140) return { name: 'Very Good', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' }
+  if (score >= 100) return { name: 'Good', color: 'text-blue-700 bg-blue-50 border-blue-200' }
+  if (score >= 60) return { name: 'Fair', color: 'text-yellow-700 bg-yellow-50 border-yellow-200' }
+  if (score >= 20) return { name: 'Poor', color: 'text-orange-700 bg-orange-50 border-orange-200' }
+  return { name: 'Suspended', color: 'text-red-700 bg-red-50 border-red-200' }
+}
+
 function StatCard({ label, value, helper }) {
   return (
     <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
@@ -71,9 +80,10 @@ export default function Dashboard() {
   const [pendingBorrowings, setPendingBorrowings] = useState([])
   const [recentBorrowings, setRecentBorrowings] = useState([])
   const [statsLoading, setStatsLoading] = useState(true)
+  const [creditScore, setCreditScore] = useState(100)
 
-  const fetchLogs = useCallback(async () => {
-    setLogsLoading(true)
+  const fetchLogs = useCallback(async (showLoading = false) => {
+    if (showLoading) setLogsLoading(true)
     const { data } = await supabase
       .from('audit_logs')
       .select('id, event_type, detail, created_at')
@@ -83,22 +93,31 @@ export default function Dashboard() {
     setLogsLoading(false)
   }, [])
 
-  const fetchStats = useCallback(async () => {
+  const fetchStats = useCallback(async (showLoading = false) => {
     if (!user?.id) return
-    setStatsLoading(true)
-    const [active, pending, recent] = await Promise.all([
+    if (showLoading) setStatsLoading(true)
+    const [active, pending, recent, profile] = await Promise.all([
       getUserActiveBorrowings(user.id),
       getUserPendingBorrowings(user.id),
       getUserRecentBorrowings(user.id, 3),
+      getUserProfile(user.id)
     ])
     setActiveBorrowings(active.data ?? [])
     setPendingBorrowings(pending.data ?? [])
     setRecentBorrowings(recent.data ?? [])
+    if (profile.data) {
+      setCreditScore(profile.data.credit_score ?? 100)
+    }
     setStatsLoading(false)
-  }, [user?.id])
+  }, [user])
 
-  useEffect(() => { fetchLogs() }, [fetchLogs])
-  useEffect(() => { fetchStats() }, [fetchStats])
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchLogs(true)
+      fetchStats(true)
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [fetchLogs, fetchStats])
 
   const handleTimeout = useCallback(async () => {
     await signOut('timeout')
@@ -221,6 +240,34 @@ export default function Dashboard() {
           </div>
         </Card>
 
+        {/* Credit Score & Limits Status */}
+        <Card className="border-l-4 border-l-gray-900">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div>
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Library Credit Standing</h3>
+              <div className="flex items-baseline gap-2 mt-1">
+                <span className="text-3xl font-extrabold text-gray-900">{creditScore}</span>
+                <span className="text-sm text-gray-500">/ 200 pts</span>
+                <span className={`ml-3 px-2.5 py-0.5 text-xs font-semibold rounded-full border ${getCreditTier(creditScore).color}`}>
+                  {getCreditTier(creditScore).name}
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mt-1.5">
+                Your credit score increases when you return books on time or early, and decreases when books become overdue.
+              </p>
+            </div>
+            <div className="flex gap-6 shrink-0 border-t md:border-t-0 pt-4 md:pt-0 border-gray-100">
+              <div>
+                <span className="text-xs text-gray-500 block">Borrowing Power</span>
+                <span className="text-xl font-bold text-gray-900 mt-0.5 block">
+                  {activeBorrowings.length + pendingBorrowings.length} <span className="text-xs font-normal text-gray-500">used of</span> {Math.floor(creditScore / 20)}
+                </span>
+                <span className="text-xs text-gray-400 block mt-0.5">concurrent books limit</span>
+              </div>
+            </div>
+          </div>
+        </Card>
+
         {/* Overdue Warning */}
         {!statsLoading && activeBorrowings.some(b => new Date(b.due_date) < new Date()) && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex gap-3">
@@ -231,6 +278,20 @@ export default function Dashboard() {
               <p className="text-sm font-semibold text-red-800">Overdue books</p>
               <p className="text-xs text-red-600 mt-0.5">
                 You have {activeBorrowings.filter(b => new Date(b.due_date) < new Date()).length} overdue book(s). Please return them as soon as possible.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {!statsLoading && creditScore < 60 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3">
+            <svg className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M12 22a10 10 0 110-20 10 10 0 010 20z" />
+            </svg>
+            <div>
+              <p className="text-sm font-semibold text-amber-800">Low credit score</p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                Your credit score is currently {creditScore}. Returning books on time can quickly improve your borrowing limit.
               </p>
             </div>
           </div>

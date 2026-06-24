@@ -7,3 +7,5 @@ node_modules
 dist
 PLAN.md
 seed-admin.js
+.vercel
+plan2.md

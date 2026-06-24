@@ -9,6 +9,15 @@ import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { TextInput } from '../components/ui/TextInput'
 
+function getCreditTier(score) {
+  if (score >= 180) return { name: 'Excellent', color: 'text-green-700 bg-green-50 border-green-200' }
+  if (score >= 140) return { name: 'Very Good', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' }
+  if (score >= 100) return { name: 'Good', color: 'text-blue-700 bg-blue-50 border-blue-200' }
+  if (score >= 60) return { name: 'Fair', color: 'text-yellow-700 bg-yellow-50 border-yellow-200' }
+  if (score >= 20) return { name: 'Poor', color: 'text-orange-700 bg-orange-50 border-orange-200' }
+  return { name: 'Suspended', color: 'text-red-700 bg-red-50 border-red-200' }
+}
+
 export default function UserProfile() {
   const navigate = useNavigate()
   const { user, role, signOut, refreshAal } = useAuth()
@@ -33,21 +42,16 @@ export default function UserProfile() {
   const [disableServerError, setDisableServerError] = useState('')
   const [disabling, setDisabling] = useState(false)
 
-  const fetchMfaStatus = useCallback(async () => {
-    setMfaLoading(true)
+  const fetchMfaStatus = useCallback(async (showLoading = false) => {
+    if (showLoading) setMfaLoading(true)
     const { data } = await supabase.auth.mfa.listFactors()
     const verified = data?.totp?.find((f) => f.status === 'verified') ?? null
     setMfaFactor(verified)
     setMfaLoading(false)
   }, [])
 
-  useEffect(() => {
-    fetchProfile()
-    fetchMfaStatus()
-  }, [fetchMfaStatus])
-
-  const fetchProfile = async () => {
-    setLoading(true)
+  const fetchProfile = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoading(true)
     const { data } = await getUserProfile(user.id)
     if (data) {
       setProfile({
@@ -55,11 +59,20 @@ export default function UserProfile() {
         last_name: data.last_name || '',
         phone: data.phone || '',
         address: data.address || '',
-        library_id: data.library_id || ''
+        library_id: data.library_id || '',
+        credit_score: data.credit_score ?? 100
       })
     }
     setLoading(false)
-  }
+  }, [user.id])
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchProfile(true)
+      fetchMfaStatus(true)
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [fetchMfaStatus, fetchProfile])
 
   const handleDisableMfa = async (e) => {
     e.preventDefault()
@@ -214,6 +227,32 @@ export default function UserProfile() {
               <div>
                 <label className="text-sm font-medium text-gray-700">User ID</label>
                 <p className="mt-1 text-gray-600 text-xs break-all">{user?.id}</p>
+              </div>
+            </div>
+          </Card>
+
+          {/* Library Standing / Credit Score */}
+          <Card className="mb-8 border-l-4 border-l-gray-900">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Library Standing</h2>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+              <div>
+                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider block">Credit Score Rating</span>
+                <div className="flex items-baseline gap-2 mt-1">
+                  <span className="text-3xl font-extrabold text-gray-900">{profile.credit_score ?? 100}</span>
+                  <span className="text-sm text-gray-500">/ 200 pts</span>
+                  <span className={`ml-3 px-2.5 py-0.5 text-xs font-semibold rounded-full border ${getCreditTier(profile.credit_score ?? 100).color}`}>
+                    {getCreditTier(profile.credit_score ?? 100).name}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Your credit score controls how many books you can borrow concurrently.
+                </p>
+              </div>
+              <div className="border-t sm:border-t-0 pt-4 sm:pt-0 border-gray-100 shrink-0">
+                <span className="text-xs text-gray-500 block">Max Borrowing Limit</span>
+                <span className="text-xl font-bold text-gray-900 mt-0.5 block">
+                  {Math.floor((profile.credit_score ?? 100) / 20)} <span className="text-xs font-normal text-gray-500">books at a time</span>
+                </span>
               </div>
             </div>
           </Card>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { getUserBorrowings, returnBook } from '../lib/api'
@@ -21,16 +21,17 @@ export default function MyBorrowings() {
   const [loading, setLoading] = useState(true)
   const [returnStatus, setReturnStatus] = useState({})
 
-  useEffect(() => {
-    fetchBorrowings()
-  }, [])
-
-  const fetchBorrowings = async () => {
+  const fetchBorrowings = useCallback(async () => {
     setLoading(true)
     const { data } = await getUserBorrowings(user.id)
     setBorrowings(data || [])
     setLoading(false)
-  }
+  }, [user])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchBorrowings()
+  }, [fetchBorrowings])
 
   const handleReturn = async (borrowingId, bookId) => {
     setReturnStatus(prev => ({ ...prev, [borrowingId]: 'loading' }))
