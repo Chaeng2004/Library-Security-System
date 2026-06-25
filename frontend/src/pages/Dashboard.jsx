@@ -126,6 +126,10 @@ export default function Dashboard() {
 
   const { secondsLeft, isWarning } = useIdleTimeout(handleTimeout, IDLE_MS, WARNING_MS)
 
+  useEffect(() => {
+    sessionStorage.setItem('sessionIdleSecondsLeft', secondsLeft)
+  }, [secondsLeft])
+
   const confirmLogout = async () => {
     setShowLogoutConfirm(false)
     await signOut('user')
@@ -159,14 +163,6 @@ export default function Dashboard() {
               <Button onClick={confirmLogout}>Sign out</Button>
             </div>
           </div>
-        </div>
-      )}
-
-      {isWarning && (
-        <div className="bg-gray-900 text-white text-sm text-center py-2 px-4">
-          Your session will expire in{' '}
-          <span className="font-semibold tabular-nums">{formatSeconds(secondsLeft)}</span>
-          {' '}due to inactivity.
         </div>
       )}
 
@@ -228,15 +224,7 @@ export default function Dashboard() {
               <h2 className="text-lg font-semibold text-gray-900">User dashboard</h2>
               <p className="text-sm text-gray-500 mt-0.5">{user?.email}</p>
             </div>
-            <div className="flex items-center gap-2 text-sm">
-              <div className={`w-2 h-2 rounded-full ${isWarning ? 'bg-gray-400' : 'bg-gray-300'}`} />
-              <span className="text-gray-500">
-                Session idle timeout:{' '}
-                <span className={`font-semibold tabular-nums ${isWarning ? 'text-gray-900' : 'text-gray-600'}`}>
-                  {formatSeconds(secondsLeft)}
-                </span>
-              </span>
-            </div>
+           
           </div>
         </Card>
 
