@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useIdleTimeout } from '../hooks/useIdleTimeout'
 import { getPendingBorrowings, getAllBorrowings, approveBorrowing, rejectBorrowing, returnBook, getBooks, addBook, updateBook, deleteBook, getAllUsers, getUserEmailsByIds, updateUserCreditScore } from '../lib/api'
+import { supabase } from '../lib/supabaseClient'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { TextInput } from '../components/ui/TextInput'
@@ -52,6 +53,8 @@ export default function AdminDashboard() {
   const [editingBook, setEditingBook] = useState(null) // null = create mode, object = edit mode
   const [showBookForm, setShowBookForm] = useState(false)
   const [bookActionStatus, setBookActionStatus] = useState('')
+  const [coverFile, setCoverFile] = useState(null)
+  const [coverPreview, setCoverPreview] = useState(null)
 
   // Users management state
   const [usersList, setUsersList] = useState([])
@@ -166,17 +169,27 @@ export default function AdminDashboard() {
       return
     }
     setBookActionStatus('saving')
+    let cover_url = bookForm.cover_url
+    if (coverFile) {
+      const ext = coverFile.name.split('.').pop()
+      const path = `covers/${Date.now()}.${ext}`
+      const { error: uploadError } = await supabase.storage.from('book-covers').upload(path, coverFile, { upsert: true })
+      if (uploadError) { setBookActionStatus('Error: ' + uploadError.message); return }
+      cover_url = supabase.storage.from('book-covers').getPublicUrl(path).data.publicUrl
+    }
     if (editingBook) {
-      const { error } = await updateBook(editingBook.id, bookForm)
+      const { error } = await updateBook(editingBook.id, { ...bookForm, cover_url })
       if (error) { setBookActionStatus('Error: ' + error.message); return }
     } else {
-      const { error } = await addBook(bookForm)
+      const { error } = await addBook({ ...bookForm, cover_url })
       if (error) { setBookActionStatus('Error: ' + error.message); return }
     }
     setBookActionStatus('')
     setShowBookForm(false)
     setEditingBook(null)
     setBookForm({ title: '', author: '', isbn: '', description: '', available: true, cover_url: '' })
+    setCoverFile(null)
+    setCoverPreview(null)
     fetchBooks()
   }
 
@@ -190,6 +203,8 @@ export default function AdminDashboard() {
   const openEditBook = (book) => {
     setEditingBook(book)
     setBookForm({ title: book.title, author: book.author, isbn: book.isbn || '', description: book.description || '', available: book.available, cover_url: book.cover_url || '' })
+    setCoverFile(null)
+    setCoverPreview(book.cover_url || null)
     setShowBookForm(true)
   }
 
@@ -461,7 +476,7 @@ export default function AdminDashboard() {
           <div>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-base font-semibold text-gray-900">Books ({books.length})</h2>
-              <Button onClick={() => { setEditingBook(null); setBookForm({ title: '', author: '', isbn: '', description: '', available: true, cover_url: '' }); setShowBookForm(true) }}>
+              <Button onClick={() => { setEditingBook(null); setBookForm({ title: '', author: '', isbn: '', description: '', available: true, cover_url: '' }); setCoverFile(null); setCoverPreview(null); setShowBookForm(true) }}>
                 Add Book
               </Button>
             </div>
@@ -491,9 +506,31 @@ export default function AdminDashboard() {
                   <TextInput
                     label="Cover URL"
                     value={bookForm.cover_url}
-                    onChange={e => setBookForm(p => ({ ...p, cover_url: e.target.value }))}
+                    onChange={e => {
+                      setBookForm(p => ({ ...p, cover_url: e.target.value }))
+                      if (!coverFile) setCoverPreview(e.target.value || null)
+                    }}
                     placeholder="https://... (optional)"
                   />
+                  <div>
+                    <label className="text-sm font-medium text-gray-700 block mb-1">Upload Cover Image <span className="text-gray-400 font-normal">(optional)</span></label>
+                    {coverPreview && (
+                      <div className="mb-2 w-16 h-24 rounded-md overflow-hidden bg-gray-50 border border-gray-200">
+                        <img src={coverPreview} alt="Preview" className="w-full h-full object-contain" />
+                      </div>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={e => {
+                        const file = e.target.files[0]
+                        if (!file) return
+                        setCoverFile(file)
+                        setCoverPreview(URL.createObjectURL(file))
+                      }}
+                      className="w-full text-sm text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
+                    />
+                  </div>
                   <div>
                     <label className="text-sm font-medium text-gray-700 block mb-1">Description</label>
                     <textarea
