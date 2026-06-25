@@ -162,17 +162,18 @@ export default function AdminBooks() {
                 placeholder="ISBN (optional)"
               />
               <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1">Description</label>
-                <textarea
-                  value={form.description}
-                  onChange={(e) => setForm(p => ({ ...p, description: e.target.value }))}
-                  placeholder="Book description (optional)"
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-900 text-sm"
+                <label className="text-sm font-medium text-gray-700 block mb-1">Cover URL <span className="text-gray-400 font-normal">(optional)</span></label>
+                <TextInput
+                  value={form.cover_url}
+                  onChange={(e) => {
+                    setForm(p => ({ ...p, cover_url: e.target.value }))
+                    if (!coverFile) setCoverPreview(e.target.value || null)
+                  }}
+                  placeholder="https://... (optional)"
                 />
               </div>
               <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1">Cover Image <span className="text-gray-400 font-normal">(optional)</span></label>
+                <label className="text-sm font-medium text-gray-700 block mb-1">Upload Cover Image <span className="text-gray-400 font-normal">(optional)</span></label>
                 {coverPreview && (
                   <div className="mb-2 w-20 h-[120px] rounded-md overflow-hidden bg-gray-50 border border-gray-200">
                     <img src={coverPreview} alt="Preview" className="w-full h-full object-contain" />
@@ -183,6 +184,16 @@ export default function AdminBooks() {
                   accept="image/*"
                   onChange={handleFileChange}
                   className="w-full text-sm text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1">Description</label>
+                <textarea
+                  value={form.description}
+                  onChange={(e) => setForm(p => ({ ...p, description: e.target.value }))}
+                  placeholder="Book description (optional)"
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-900 text-sm"
                 />
               </div>
               {formError && (
