@@ -4,15 +4,18 @@ import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import { useIdleTimeout } from '../hooks/useIdleTimeout'
 import { getUserActiveBorrowings, getUserPendingBorrowings, getUserRecentBorrowings, getUserProfile } from '../lib/api'
+import { getBorrowLimit } from '../lib/credit'
+import { formatDateTime } from '../lib/format'
+import { AppShell } from '../components/layout/AppShell'
 import { Card } from '../components/ui/Card'
-import { Button } from '../components/ui/Button'
+import { StatCard } from '../components/ui/StatCard'
+import { CreditScoreCard } from '../components/ui/CreditScoreCard'
+import { LoadingSpinner } from '../components/ui/LoadingSpinner'
+import { EmptyState } from '../components/ui/EmptyState'
+import { StatusBadge } from '../components/ui/StatusBadge'
 
 const IDLE_MS = 15 * 60 * 60 * 1000
 const WARNING_MS = 60 * 1000
-
-function formatDate(ts) {
-  return new Date(ts).toLocaleString()
-}
 
 const EVENT_LABELS = {
   LOGIN_SUCCESS: 'Signed in',
@@ -28,25 +31,6 @@ const EVENT_LABELS = {
   PASSWORD_RESET_SUCCESS: 'Password reset',
 }
 
-function getCreditTier(score) {
-  if (score >= 180) return { name: 'Excellent', color: 'text-green-700 bg-green-50 border-green-200' }
-  if (score >= 140) return { name: 'Very Good', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' }
-  if (score >= 100) return { name: 'Good', color: 'text-blue-700 bg-blue-50 border-blue-200' }
-  if (score >= 60) return { name: 'Fair', color: 'text-yellow-700 bg-yellow-50 border-yellow-200' }
-  if (score >= 20) return { name: 'Poor', color: 'text-orange-700 bg-orange-50 border-orange-200' }
-  return { name: 'Suspended', color: 'text-red-700 bg-red-50 border-red-200' }
-}
-
-function StatCard({ label, value, helper }) {
-  return (
-    <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
-      <p className="text-xs text-gray-500">{label}</p>
-      <p className="text-sm font-medium text-gray-900 mt-0.5">{value}</p>
-      {helper && <p className="text-[11px] text-gray-400 mt-1">{helper}</p>}
-    </div>
-  )
-}
-
 function SectionTitle({ title, description }) {
   return (
     <div className="mb-4">
@@ -58,51 +42,47 @@ function SectionTitle({ title, description }) {
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { user, role, signOut } = useAuth()
+  const { user, role, aal, nextAal, signOut } = useAuth()
 
   const [auditLogs, setAuditLogs] = useState([])
   const [logsLoading, setLogsLoading] = useState(true)
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
-
   const [activeBorrowings, setActiveBorrowings] = useState([])
   const [pendingBorrowings, setPendingBorrowings] = useState([])
   const [recentBorrowings, setRecentBorrowings] = useState([])
   const [statsLoading, setStatsLoading] = useState(true)
   const [creditScore, setCreditScore] = useState(100)
 
-  const fetchLogs = useCallback(async (showLoading = false) => {
-    if (showLoading) setLogsLoading(true)
+  const fetchLogs = useCallback(async () => {
+    setLogsLoading(true)
     const { data } = await supabase
       .from('audit_logs')
       .select('id, event_type, detail, created_at')
       .order('created_at', { ascending: false })
-      .limit(20)
+      .limit(15)
     setAuditLogs(data ?? [])
     setLogsLoading(false)
   }, [])
 
-  const fetchStats = useCallback(async (showLoading = false) => {
+  const fetchStats = useCallback(async () => {
     if (!user?.id) return
-    if (showLoading) setStatsLoading(true)
+    setStatsLoading(true)
     const [active, pending, recent, profile] = await Promise.all([
       getUserActiveBorrowings(user.id),
       getUserPendingBorrowings(user.id),
       getUserRecentBorrowings(user.id, 3),
-      getUserProfile(user.id)
+      getUserProfile(user.id),
     ])
     setActiveBorrowings(active.data ?? [])
     setPendingBorrowings(pending.data ?? [])
     setRecentBorrowings(recent.data ?? [])
-    if (profile.data) {
-      setCreditScore(profile.data.credit_score ?? 100)
-    }
+    if (profile.data) setCreditScore(profile.data.credit_score ?? 100)
     setStatsLoading(false)
   }, [user])
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchLogs(true)
-      fetchStats(true)
+      fetchLogs()
+      fetchStats()
     }, 0)
     return () => clearTimeout(timer)
   }, [fetchLogs, fetchStats])
@@ -118,378 +98,162 @@ export default function Dashboard() {
     sessionStorage.setItem('sessionIdleSecondsLeft', secondsLeft)
   }, [secondsLeft])
 
-  const confirmLogout = async () => {
-    setShowLogoutConfirm(false)
-    await signOut('user')
-    navigate('/login', { replace: true })
-  }
-
-  // Fix: navigate must be in an effect, not during render
   useEffect(() => {
     if (role === 'admin') navigate('/admin', { replace: true })
   }, [role, navigate])
 
-  if (role === null) return null
-  if (role === 'admin') return null
+  if (role === null || role === 'admin') return null
+
+  const openLoans = activeBorrowings.length + pendingBorrowings.length
+  const overdueCount = activeBorrowings.filter((b) => new Date(b.due_date) < new Date()).length
+  const mfaLabel = aal === 'aal2' ? 'MFA verified (AAL2)' : nextAal === 'aal2' ? 'MFA required' : 'Password only (AAL1)'
+  const idleMinutes = Math.round(IDLE_MS / 60000)
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {showLogoutConfirm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
-            <h2 className="text-base font-semibold text-gray-900">Sign out?</h2>
-            <p className="mt-2 text-sm text-gray-500">
-              Your current session will be terminated. You will need to sign in and verify your identity again.
-            </p>
-            <div className="mt-5 flex gap-3 justify-end">
-              <button
-                onClick={() => setShowLogoutConfirm(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition"
-              >
-                Cancel
-              </button>
-              <Button onClick={confirmLogout}>Sign out</Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <header className="bg-white border-b border-gray-200">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-gray-900 flex items-center justify-center">
-              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-              </svg>
-            </div>
-            <span className="font-semibold text-gray-900">Library Security System</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right hidden sm:block">
-              <p className="text-xs text-gray-500">Signed in as</p>
-              <p className="text-sm font-medium text-gray-900">{user?.email}</p>
-            </div>
-            <Button variant="secondary" onClick={() => setShowLogoutConfirm(true)}>
-              Sign out
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      <nav className="bg-white border-b border-gray-200">
-        <div className="max-w-4xl mx-auto px-4 py-3 flex gap-2 overflow-x-auto">
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="px-4 py-2 text-sm font-medium text-gray-900 bg-gray-100 rounded-md shrink-0"
-          >
-            Dashboard
-          </button>
-          <button
-            onClick={() => navigate('/books')}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md shrink-0"
-          >
-            Browse Books
-          </button>
-          <button
-            onClick={() => navigate('/my-borrowings')}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md shrink-0"
-          >
-            My Borrowings
-          </button>
-          <button
-            onClick={() => navigate('/profile')}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md shrink-0"
-          >
-            Profile
-          </button>
-        </div>
-      </nav>
-
-      <main className="max-w-4xl mx-auto px-4 py-8 flex flex-col gap-6">
+    <AppShell
+      title="Dashboard"
+      badges={{ borrowings: activeBorrowings.length }}
+    >
+      <div className="flex flex-col gap-6">
         <Card>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">User dashboard</h2>
-              <p className="text-sm text-gray-500 mt-0.5">{user?.email}</p>
-            </div>
-           
-          </div>
+          <CreditScoreCard
+            score={creditScore}
+            openLoans={openLoans}
+            className=""
+          />
         </Card>
 
-        {/* Credit Score & Limits Status */}
-        <Card className="border-l-4 border-l-gray-900">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div>
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Library Credit Standing</h3>
-              <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-3xl font-extrabold text-gray-900">{creditScore}</span>
-                <span className="text-sm text-gray-500">/ 200 pts</span>
-                <span className={`ml-3 px-2.5 py-0.5 text-xs font-semibold rounded-full border ${getCreditTier(creditScore).color}`}>
-                  {getCreditTier(creditScore).name}
-                </span>
-              </div>
-              <p className="text-xs text-gray-500 mt-1.5">
-                Your credit score increases when you return books on time or early, and decreases when books become overdue.
-              </p>
-            </div>
-            <div className="flex gap-6 shrink-0 border-t md:border-t-0 pt-4 md:pt-0 border-gray-100">
-              <div>
-                <span className="text-xs text-gray-500 block">Borrowing Power</span>
-                <span className="text-xl font-bold text-gray-900 mt-0.5 block">
-                  {activeBorrowings.length + pendingBorrowings.length} <span className="text-xs font-normal text-gray-500">used of</span> {Math.floor(creditScore / 20)}
-                </span>
-                <span className="text-xs text-gray-400 block mt-0.5">concurrent books limit</span>
-              </div>
-            </div>
-          </div>
-        </Card>
-
-        {/* Overdue Warning */}
-        {!statsLoading && activeBorrowings.some(b => new Date(b.due_date) < new Date()) && (
+        {!statsLoading && overdueCount > 0 && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex gap-3">
-            <svg className="w-5 h-5 text-red-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-            </svg>
             <div>
               <p className="text-sm font-semibold text-red-800">Overdue books</p>
               <p className="text-xs text-red-600 mt-0.5">
-                You have {activeBorrowings.filter(b => new Date(b.due_date) < new Date()).length} overdue book(s). Please return them as soon as possible.
+                You have {overdueCount} overdue book{overdueCount !== 1 ? 's' : ''}. Return them to avoid further credit penalties.
               </p>
             </div>
           </div>
         )}
 
         {!statsLoading && creditScore < 60 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3">
-            <svg className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M12 22a10 10 0 110-20 10 10 0 010 20z" />
-            </svg>
-            <div>
-              <p className="text-sm font-semibold text-amber-800">Low credit score</p>
-              <p className="text-xs text-amber-700 mt-0.5">
-                Your credit score is currently {creditScore}. Returning books on time can quickly improve your borrowing limit.
-              </p>
-            </div>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+            <p className="text-sm font-semibold text-amber-800">Low credit score ({creditScore})</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              Your borrowing limit is {getBorrowLimit(creditScore)} book{getBorrowLimit(creditScore) !== 1 ? 's' : ''}. Return books on time to improve your score.
+            </p>
           </div>
         )}
 
-        {/* Stats row */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <StatCard
-            label="Currently borrowed"
-            value={statsLoading ? '…' : String(activeBorrowings.length)}
-            helper="Active loans"
-          />
-          <StatCard
-            label="Pending approval"
-            value={statsLoading ? '…' : String(pendingBorrowings.length)}
-            helper="Waiting for admin"
-          />
-          <StatCard
-            label="Overdue"
-            value={statsLoading ? '…' : String(activeBorrowings.filter(b => new Date(b.due_date) < new Date()).length)}
-            helper="Past due date"
-          />
-          <StatCard
-            label="Recently returned"
-            value={statsLoading ? '…' : String(recentBorrowings.length)}
-            helper="Last 3 returns"
-          />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <StatCard label="Active loans" value={statsLoading ? '…' : String(activeBorrowings.length)} />
+          <StatCard label="Pending approval" value={statsLoading ? '…' : String(pendingBorrowings.length)} />
+          <StatCard label="Overdue" value={statsLoading ? '…' : String(overdueCount)} />
+          <StatCard label="Recent returns" value={statsLoading ? '…' : String(recentBorrowings.length)} helper="Last 3" />
         </div>
 
-        {/* Active Borrowings */}
-        {!statsLoading && activeBorrowings.length > 0 && (
-          <Card>
-            <SectionTitle title="Currently borrowed" description="Books you currently have checked out" />
-            <div className="divide-y divide-gray-100">
-              {activeBorrowings.map(b => {
-                const overdue = new Date(b.due_date) < new Date()
-                return (
-                  <div key={b.id} className="py-3 flex items-center justify-between gap-4">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{b.books?.title ?? '—'}</p>
-                      <p className="text-xs text-gray-500">{b.books?.author ?? ''}</p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className={`text-xs font-medium ${overdue ? 'text-red-600' : 'text-gray-600'}`}>
-                        Due: {b.due_date ? formatDate(b.due_date) : 'N/A'}
-                      </p>
-                      {overdue && <p className="text-[11px] text-red-500">Overdue</p>}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </Card>
-        )}
-
-        {/* Pending Requests */}
-        {!statsLoading && pendingBorrowings.length > 0 && (
-          <Card>
-            <SectionTitle title="Pending borrow requests" description="Waiting for admin approval" />
-            <div className="divide-y divide-gray-100">
-              {pendingBorrowings.map(b => (
-                <div key={b.id} className="py-3 flex items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{b.books?.title ?? '—'}</p>
-                    <p className="text-xs text-gray-500">{b.books?.author ?? ''}</p>
-                  </div>
-                  <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full shrink-0">Pending</span>
+        {statsLoading ? (
+          <LoadingSpinner label="Loading borrowings…" />
+        ) : (
+          <>
+            {activeBorrowings.length > 0 && (
+              <Card>
+                <SectionTitle title="Currently borrowed" description="Active loans on your account" />
+                <div className="divide-y divide-gray-100">
+                  {activeBorrowings.map((b) => {
+                    const overdue = new Date(b.due_date) < new Date()
+                    return (
+                      <div key={b.id} className="py-3 flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{b.books?.title ?? '—'}</p>
+                          <p className="text-xs text-gray-500">{b.books?.author ?? ''}</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className={`text-xs font-medium ${overdue ? 'text-red-600' : 'text-gray-600'}`}>
+                            Due {formatDateTime(b.due_date)}
+                          </p>
+                          {overdue && <StatusBadge status="unavailable" label="Overdue" className="mt-1" />}
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
-              ))}
-            </div>
-          </Card>
-        )}
+              </Card>
+            )}
 
-        {/* Recent Returns */}
-        {!statsLoading && recentBorrowings.length > 0 && (
-          <Card>
-            <SectionTitle title="Recently returned" description="Your last 3 returned books" />
-            <div className="divide-y divide-gray-100">
-              {recentBorrowings.map(b => (
-                <div key={b.id} className="py-3 flex items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{b.books?.title ?? '—'}</p>
-                    <p className="text-xs text-gray-500">{b.books?.author ?? ''}</p>
-                  </div>
-                  <p className="text-xs text-gray-500 shrink-0">{b.returned_date ? formatDate(b.returned_date) : ''}</p>
+            {pendingBorrowings.length > 0 && (
+              <Card>
+                <SectionTitle title="Pending requests" />
+                <div className="divide-y divide-gray-100">
+                  {pendingBorrowings.map((b) => (
+                    <div key={b.id} className="py-3 flex items-center justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{b.books?.title ?? '—'}</p>
+                        <p className="text-xs text-gray-500">{b.books?.author ?? ''}</p>
+                      </div>
+                      <StatusBadge status="pending" />
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </Card>
+              </Card>
+            )}
+
+            {activeBorrowings.length === 0 && pendingBorrowings.length === 0 && recentBorrowings.length === 0 && (
+              <Card>
+                <EmptyState
+                  title="No borrowings yet"
+                  description="Browse the catalog to request your first book."
+                  action={
+                    <button
+                      type="button"
+                      onClick={() => navigate('/books')}
+                      className="text-sm font-medium text-gray-900 underline underline-offset-2"
+                    >
+                      Browse books
+                    </button>
+                  }
+                />
+              </Card>
+            )}
+          </>
         )}
-
-        {/* Quick Navigation */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <button
-            type="button"
-            onClick={(e) => { e.preventDefault(); navigate('/books') }}
-            className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 cursor-pointer hover:shadow-md transition-shadow"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-gray-900">Browse Books</p>
-                <p className="text-xs text-gray-500">Discover and borrow books</p>
-              </div>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={(e) => { e.preventDefault(); navigate('/my-borrowings') }}
-            className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 cursor-pointer hover:shadow-md transition-shadow"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-gray-900">My Borrowings</p>
-                <p className="text-xs text-gray-500">View your borrowed books</p>
-              </div>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={(e) => { e.preventDefault(); navigate('/profile') }}
-            className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 cursor-pointer hover:shadow-md transition-shadow"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
-                <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-gray-900">Profile</p>
-                <p className="text-xs text-gray-500">Manage your account</p>
-              </div>
-            </div>
-          </button>
-        </div>
 
         <Card>
-          <SectionTitle
-            title="Session status"
-            description="Connected to Supabase auth and the audit log table."
-          />
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {[
-              { label: 'Role', value: 'User', helper: 'Resolved from user_profiles' },
-              { label: 'Authentication', value: 'Password + MFA', helper: 'Supabase auth' },
-              { label: 'Session', value: 'Active (AAL2)', helper: 'MFA required' },
-              { label: 'Idle timeout', value: `${IDLE_MS / 60000} minutes`, helper: 'Auto sign-out on inactivity' },
-            ].map((item) => (
-              <StatCard key={item.label} {...item} />
-            ))}
-          </div>
-        </Card>
-
-        <Card>
-          <SectionTitle
-            title="Your account"
-            description="Regular user view."
-          />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <StatCard label="What you can do" value="Browse & borrow books" helper="Signed-in user only" />
-            <StatCard label="Security" value="MFA protected" helper="AAL2 is required before dashboard access" />
+          <SectionTitle title="Account & security" description="Live session details from Supabase Auth" />
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <StatCard label="Role" value={role ?? 'user'} helper="From user_profiles" />
+            <StatCard label="Authentication" value={mfaLabel} />
+            <StatCard label="Borrow limit" value={`${getBorrowLimit(creditScore)} books`} helper={`Score: ${creditScore}`} />
+            <StatCard label="Idle timeout" value={`${idleMinutes} min`} helper="Auto sign-out" />
           </div>
         </Card>
 
         <Card>
           <div className="flex items-center justify-between mb-4 gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900">Security event log</h3>
-              <p className="text-xs text-gray-500 mt-1">
-                Live from Supabase table: <span className="font-medium">audit_logs</span>
-              </p>
-            </div>
-            <button onClick={fetchLogs} className="text-xs text-gray-500 hover:text-gray-700 underline">
+            <SectionTitle title="Security event log" description="Recent activity from audit_logs" />
+            <button type="button" onClick={fetchLogs} className="text-xs text-gray-500 hover:text-gray-700 underline shrink-0">
               Refresh
             </button>
           </div>
           {logsLoading ? (
-            <p className="text-sm text-gray-400 py-4 text-center">Loading events…</p>
+            <LoadingSpinner className="h-6 w-6" label="" />
           ) : auditLogs.length === 0 ? (
-            <p className="text-sm text-gray-400 py-4 text-center">No events recorded yet.</p>
+            <EmptyState title="No events yet" description="Sign-in and security events will appear here." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto -mx-2">
+              <table className="w-full text-sm min-w-[480px]">
                 <thead>
                   <tr className="border-b border-gray-100">
-                    <th className="text-left text-xs text-gray-500 font-medium pb-2">Event</th>
-                    <th className="text-left text-xs text-gray-500 font-medium pb-2">Detail</th>
-                    <th className="text-left text-xs text-gray-500 font-medium pb-2">Time</th>
+                    <th className="text-left text-xs text-gray-500 font-medium pb-2 px-2">Event</th>
+                    <th className="text-left text-xs text-gray-500 font-medium pb-2 px-2">Time</th>
                   </tr>
                 </thead>
                 <tbody>
                   {auditLogs.map((log) => (
                     <tr key={log.id} className="border-b border-gray-50 last:border-0">
-                      <td className="py-2 pr-4">
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                            log.event_type.includes('FAILURE') ? 'bg-gray-400' : 'bg-gray-700'
-                          }`} />
-                          <span className="text-gray-800 whitespace-nowrap">
-                            {EVENT_LABELS[log.event_type] ?? log.event_type}
-                          </span>
-                        </span>
+                      <td className="py-2 px-2 text-gray-800 text-xs">
+                        {EVENT_LABELS[log.event_type] ?? log.event_type}
                       </td>
-                      <td className="py-2 pr-4 text-gray-500 text-xs">
-                        {log.detail && Object.keys(log.detail).length > 0
-                          ? JSON.stringify(log.detail)
-                          : '—'}
-                      </td>
-                      <td className="py-2 text-gray-500 text-xs whitespace-nowrap">
-                        {formatDate(log.created_at)}
+                      <td className="py-2 px-2 text-gray-500 text-xs whitespace-nowrap">
+                        {formatDateTime(log.created_at)}
                       </td>
                     </tr>
                   ))}
@@ -498,7 +262,7 @@ export default function Dashboard() {
             </div>
           )}
         </Card>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   )
 }

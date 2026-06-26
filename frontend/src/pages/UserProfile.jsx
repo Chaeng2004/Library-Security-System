@@ -5,22 +5,17 @@ import { useAuth } from '../context/AuthContext'
 import { getUserProfile, updateUserProfile } from '../lib/api'
 import { logEvent, AUDIT_EVENTS } from '../lib/audit'
 import { validate, mfaVerifySchema } from '../lib/validation'
+import { getBorrowLimit } from '../lib/credit'
+import { AppShell } from '../components/layout/AppShell'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { TextInput } from '../components/ui/TextInput'
-
-function getCreditTier(score) {
-  if (score >= 180) return { name: 'Excellent', color: 'text-green-700 bg-green-50 border-green-200' }
-  if (score >= 140) return { name: 'Very Good', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' }
-  if (score >= 100) return { name: 'Good', color: 'text-blue-700 bg-blue-50 border-blue-200' }
-  if (score >= 60) return { name: 'Fair', color: 'text-yellow-700 bg-yellow-50 border-yellow-200' }
-  if (score >= 20) return { name: 'Poor', color: 'text-orange-700 bg-orange-50 border-orange-200' }
-  return { name: 'Suspended', color: 'text-red-700 bg-red-50 border-red-200' }
-}
+import { CreditScoreCard } from '../components/ui/CreditScoreCard'
+import { LoadingSpinner } from '../components/ui/LoadingSpinner'
 
 export default function UserProfile() {
   const navigate = useNavigate()
-  const { user, role, signOut, refreshAal } = useAuth()
+  const { user, role, refreshAal } = useAuth()
 
   const [profile, setProfile] = useState({
     first_name: '',
@@ -136,86 +131,9 @@ export default function UserProfile() {
     setUpdating(false)
   }
 
-  const handleLogout = async () => {
-    await signOut('user')
-    navigate('/login', { replace: true })
-  }
-
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Library System</h1>
-            <p className="text-sm text-gray-500">User Profile</p>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-sm font-medium text-gray-900">{user?.email}</p>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition"
-            >
-              Sign Out
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Navigation */}
-      <nav className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex gap-4">
-          {role === 'admin' ? (
-            <>
-              <button
-                onClick={() => navigate('/admin')}
-                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
-              >
-                Admin Dashboard
-              </button>
-              <button
-                onClick={() => navigate('/admin/books')}
-                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
-              >
-                Manage Books
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => navigate('/dashboard')}
-                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
-              >
-                Dashboard
-              </button>
-              <button
-                onClick={() => navigate('/books')}
-                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
-              >
-                Browse Books
-              </button>
-              <button
-                onClick={() => navigate('/my-borrowings')}
-                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
-              >
-                My Borrowings
-              </button>
-            </>
-          )}
-          <button
-            onClick={() => navigate('/profile')}
-            className="px-4 py-2 text-sm font-medium text-gray-900 bg-gray-100 rounded-md"
-          >
-            Profile
-          </button>
-        </div>
-      </nav>
-
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="max-w-2xl">
+    <AppShell title="Profile" navVariant={role === 'admin' ? 'admin' : 'user'} maxWidth="max-w-3xl">
+      <div className="max-w-2xl mx-auto flex flex-col gap-6">
           {/* Account Information */}
           <Card className="mb-8">
             <h2 className="text-xl font-bold text-gray-900 mb-4">Account Information</h2>
@@ -232,29 +150,11 @@ export default function UserProfile() {
           </Card>
 
           {/* Library Standing / Credit Score */}
-          <Card className="mb-8 border-l-4 border-l-gray-900">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">Library Standing</h2>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-              <div>
-                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider block">Credit Score Rating</span>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <span className="text-3xl font-extrabold text-gray-900">{profile.credit_score ?? 100}</span>
-                  <span className="text-sm text-gray-500">/ 200 pts</span>
-                  <span className={`ml-3 px-2.5 py-0.5 text-xs font-semibold rounded-full border ${getCreditTier(profile.credit_score ?? 100).color}`}>
-                    {getCreditTier(profile.credit_score ?? 100).name}
-                  </span>
-                </div>
-                <p className="text-xs text-gray-500 mt-2">
-                  Your credit score controls how many books you can borrow concurrently.
-                </p>
-              </div>
-              <div className="border-t sm:border-t-0 pt-4 sm:pt-0 border-gray-100 shrink-0">
-                <span className="text-xs text-gray-500 block">Max Borrowing Limit</span>
-                <span className="text-xl font-bold text-gray-900 mt-0.5 block">
-                  {Math.floor((profile.credit_score ?? 100) / 20)} <span className="text-xs font-normal text-gray-500">books at a time</span>
-                </span>
-              </div>
-            </div>
+          <Card className="mb-0">
+            <CreditScoreCard score={profile.credit_score ?? 100} openLoans={0} />
+            <p className="text-xs text-gray-500 mt-3">
+              Max concurrent borrows: {getBorrowLimit(profile.credit_score ?? 100)} books
+            </p>
           </Card>
 
           {/* Two-Factor Authentication */}
@@ -328,9 +228,7 @@ export default function UserProfile() {
 
           {/* Profile Information */}
           {loading ? (
-            <div className="flex justify-center items-center h-64">
-              <div className="animate-spin h-8 w-8 border-4 border-gray-200 border-t-gray-900 rounded-full"></div>
-            </div>
+            <LoadingSpinner />
           ) : (
             <Card>
               <h2 className="text-xl font-bold text-gray-900 mb-6">Personal Information</h2>
@@ -429,8 +327,7 @@ export default function UserProfile() {
               </div>
             </Card>
           )}
-        </div>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   )
 }

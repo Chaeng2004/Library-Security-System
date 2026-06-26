@@ -1,11 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { getBooks, borrowBook, getUserBorrowings, getUserProfile } from '../lib/api'
 import { getMinDueDateString, validate, dueDateSchema } from '../lib/validation'
+import { AppShell } from '../components/layout/AppShell'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { TextInput } from '../components/ui/TextInput'
+import { CreditScoreCard } from '../components/ui/CreditScoreCard'
+import { LoadingSpinner } from '../components/ui/LoadingSpinner'
+import { EmptyState } from '../components/ui/EmptyState'
 import cover1984 from '../assets/1984.svg'
 import coverGreatGatsby from '../assets/thegreatgatsby.svg'
 import coverMockingbird from '../assets/tokillamockingbird.svg'
@@ -35,8 +38,7 @@ function isOverdueBorrowing(b) {
 }
 
 export default function Books() {
-  const navigate = useNavigate()
-  const { user, signOut, role } = useAuth()
+  const { user, role } = useAuth()
   
   const [books, setBooks] = useState([])
   const [loading, setLoading] = useState(true)
@@ -143,16 +145,13 @@ export default function Books() {
   }
 
   const minDueDate = getMinDueDateString()
-
-  const handleLogout = async () => {
-    await signOut('user')
-    navigate('/login', { replace: true })
-  }
+  const openBorrowCount = borrowings.filter(b => b.status === 'active' || b.status === 'return_pending').length
+  const openLoanCount = borrowings.filter(b => isOpenBorrowing(b.status)).length
 
   const selectedBook = books.find(b => b.id === selectedBookId)
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <AppShell title="Browse Books" badges={{ borrowings: openBorrowCount }} maxWidth="max-w-6xl">
       {/* Date Picker Modal */}
       {selectedBookId && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -205,99 +204,12 @@ export default function Books() {
           </div>
         </div>
       )}
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Library System</h1>
-            <p className="text-sm text-gray-500">Browse & Borrow Books</p>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-sm font-medium text-gray-900">{user?.email}</p>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition"
-            >
-              Sign Out
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Navigation */}
-      <nav className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex gap-4">
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
-          >
-            Dashboard
-          </button>
-          <button
-            onClick={() => navigate('/books')}
-            className="px-4 py-2 text-sm font-medium text-gray-900 bg-gray-100 rounded-md"
-          >
-            Browse Books
-          </button>
-          <button
-            onClick={() => navigate('/my-borrowings')}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
-          >
-            My Borrowings ({borrowings.filter(b => b.status === 'active' || b.status === 'return_pending').length})
-          </button>
-          <button
-            onClick={() => navigate('/profile')}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
-          >
-            Profile
-          </button>
-        </div>
-      </nav>
-
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        
-        {/* Credit Standing Summary Bar */}
-        <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-sm">
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-sm font-semibold text-gray-500">Credit Score:</span>
-            <span className="text-lg font-bold text-gray-900">{creditScore}</span>
-            <span className="text-xs text-gray-400">/ 200 pts</span>
-            <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full border ${
-              creditScore >= 180 ? 'text-green-700 bg-green-50 border-green-200' :
-              creditScore >= 140 ? 'text-emerald-700 bg-emerald-50 border-emerald-200' :
-              creditScore >= 100 ? 'text-blue-700 bg-blue-50 border-blue-200' :
-              creditScore >= 60 ? 'text-yellow-700 bg-yellow-50 border-yellow-200' :
-              creditScore >= 20 ? 'text-orange-700 bg-orange-50 border-orange-200' :
-              'text-red-700 bg-red-50 border-red-200'
-            }`}>
-              {creditScore >= 180 ? 'Excellent' :
-               creditScore >= 140 ? 'Very Good' :
-               creditScore >= 100 ? 'Good' :
-               creditScore >= 60 ? 'Fair' :
-               creditScore >= 20 ? 'Poor' :
-               'Suspended'}
-            </span>
-          </div>
-          <div className="flex gap-6 text-sm flex-wrap">
-            <div>
-              <span className="text-gray-500">Active Borrowings:</span>{' '}
-              <span className="font-bold text-gray-950">{borrowings.filter(b => b.status === 'active' || b.status === 'return_pending').length}</span>
-            </div>
-            <div>
-              <span className="text-gray-500">Pending Requests:</span>{' '}
-              <span className="font-bold text-gray-950">{borrowings.filter(b => b.status === 'pending').length}</span>
-            </div>
-            <div>
-              <span className="text-gray-500">Limit Capacity:</span>{' '}
-              <span className="font-bold text-gray-950">
-                {borrowings.filter(b => isOpenBorrowing(b.status)).length} / {Math.floor(creditScore / 20)}
-              </span>
-            </div>
-          </div>
-        </div>
+        <CreditScoreCard
+          score={creditScore}
+          openLoans={openLoanCount}
+          compact
+          className="mb-6"
+        />
 
         {/* Search and Filter */}
         <div className="mb-8 flex flex-col sm:flex-row gap-3">
@@ -323,12 +235,10 @@ export default function Books() {
 
         {/* Books Grid */}
         {loading ? (
-          <div className="flex justify-center items-center h-64">
-            <div className="animate-spin h-8 w-8 border-4 border-gray-200 border-t-gray-900 rounded-full"></div>
-          </div>
+          <LoadingSpinner />
         ) : books.length === 0 ? (
-          <Card className="text-center py-12">
-            <p className="text-gray-500">No books found</p>
+          <Card>
+            <EmptyState title="No books found" description="Try adjusting your search or filters." />
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -417,7 +327,6 @@ export default function Books() {
             )})}
           </div>
         )}
-      </main>
 
       {/* Book Details Modal */}
       {detailBookId && (() => {
@@ -517,6 +426,6 @@ export default function Books() {
           </div>
         )
       })()}
-    </div>
+    </AppShell>
   )
 }

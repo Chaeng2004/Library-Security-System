@@ -4,19 +4,18 @@ import { useAuth } from '../context/AuthContext'
 import { useIdleTimeout } from '../hooks/useIdleTimeout'
 import { getPendingBorrowings, getPendingReturnBorrowings, getAllBorrowings, approveBorrowing, rejectBorrowing, confirmReturn, getBooks, addBook, updateBook, deleteBook, getAllUsers, getBorrowingCountsByUserIds, updateUserCreditScore } from '../lib/api'
 import { getCreditTier, getBorrowLimit, formatProfileName } from '../lib/credit'
+import { formatDate } from '../lib/format'
+import { AdminShell } from '../components/layout/AdminShell'
 import { supabase } from '../lib/supabaseClient'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { TextInput } from '../components/ui/TextInput'
+import { ConfirmModal } from '../components/ui/ConfirmModal'
+import { LoadingSpinner } from '../components/ui/LoadingSpinner'
+import { EmptyState } from '../components/ui/EmptyState'
+import { StatusBadge } from '../components/ui/StatusBadge'
 
 const VALID_TABS = new Set(['pending', 'returns', 'all', 'books', 'users'])
-
-function formatDate(dateString) {
-  if (!dateString) return 'N/A'
-  return new Date(dateString).toLocaleDateString('en-US', {
-    year: 'numeric', month: 'short', day: 'numeric'
-  })
-}
 
 const IDLE_MS = 15 * 60 * 60 * 1000
 const WARNING_MS = 60 * 1000
@@ -24,7 +23,7 @@ const WARNING_MS = 60 * 1000
 export default function AdminDashboard() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { user, signOut } = useAuth()
+  const { signOut } = useAuth()
 
   const [pendingBorrowings, setPendingBorrowings] = useState([])
   const [pendingReturnBorrowings, setPendingReturnBorrowings] = useState([])
@@ -33,7 +32,6 @@ export default function AdminDashboard() {
   const [actionStatus, setActionStatus] = useState({})
   const currentTab = searchParams.get('tab')
   const activeTab = VALID_TABS.has(currentTab) ? currentTab : 'pending'
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [confirmAction, setConfirmAction] = useState(null)
 
   // Books management state
@@ -222,122 +220,20 @@ export default function AdminDashboard() {
     }
   }
 
-  const statusBadge = (status) => {
-    const map = {
-      pending: 'bg-yellow-100 text-yellow-800',
-      active: 'bg-green-100 text-green-800',
-      return_pending: 'bg-blue-100 text-blue-800',
-      returned: 'bg-gray-100 text-gray-800',
-    }
-    const labels = {
-      pending: 'Pending',
-      active: 'Active',
-      return_pending: 'Return pending',
-      returned: 'Returned',
-    }
-    return (
-      <span className={`px-2 py-1 rounded text-xs font-medium ${map[status] ?? 'bg-gray-100 text-gray-800'}`}>
-        {labels[status] ?? status}
-      </span>
-    )
-  }
+  const statusBadge = (status) => <StatusBadge status={status} />
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {confirmAction && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
-            <h2 className="text-base font-semibold text-gray-900">
-              {confirmActionLabel}?
-            </h2>
-            <p className="mt-2 text-sm text-gray-500">
-              {confirmActionDesc}
-            </p>
-            <div className="mt-5 flex gap-3 justify-end">
-              <button
-                onClick={() => setConfirmAction(null)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmAction}
-                className={`px-4 py-2 text-sm font-medium text-white rounded-md transition ${
-                  confirmAction.type === 'approve' ? 'bg-gray-900 hover:bg-gray-700'
-                  : confirmAction.type === 'return' ? 'bg-gray-900 hover:bg-gray-700'
-                  : 'bg-red-600 hover:bg-red-700'
-                }`}
-              >
-                {confirmActionLabel}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {showLogoutConfirm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
-            <h2 className="text-base font-semibold text-gray-900">Sign out?</h2>
-            <p className="mt-2 text-sm text-gray-500">
-              Your current session will be terminated. You will need to sign in and verify your identity again.
-            </p>
-            <div className="mt-5 flex gap-3 justify-end">
-              <button
-                onClick={() => setShowLogoutConfirm(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition"
-              >
-                Cancel
-              </button>
-              <Button onClick={async () => { setShowLogoutConfirm(false); await signOut('user'); navigate('/login', { replace: true }) }}>
-                Sign out
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Library System</h1>
-            <p className="text-sm text-gray-500">Admin Dashboard</p>
-          </div>
-          <div className="flex items-center gap-4">
-            <p className="text-sm font-medium text-gray-900 hidden sm:block">{user?.email}</p>
-            <button
-              onClick={() => setShowLogoutConfirm(true)}
-              className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition"
-            >
-              Sign Out
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <nav className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex gap-4">
-          <button
-            onClick={() => navigate('/admin')}
-            className="px-4 py-2 text-sm font-medium text-gray-900 bg-gray-100 rounded-md"
-          >
-            Admin Dashboard
-          </button>
-          <button
-            onClick={() => navigate('/admin/books')}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
-          >
-            Manage Books
-          </button>
-          <button
-            onClick={() => navigate('/profile')}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
-          >
-            Profile
-          </button>
-        </div>
-      </nav>
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <AdminShell title="Admin Dashboard">
+      <ConfirmModal
+        open={!!confirmAction}
+        title={`${confirmActionLabel}?`}
+        description={confirmActionDesc}
+        confirmLabel={confirmActionLabel}
+        onConfirm={handleConfirmAction}
+        onCancel={() => setConfirmAction(null)}
+        confirmVariant={confirmAction?.type === 'reject' ? 'danger' : 'primary'}
+        loading={confirmAction && actionStatus[confirmAction.borrowing?.id] === 'loading'}
+      />
         {/* Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-8">
           <Card>
@@ -394,17 +290,11 @@ export default function AdminDashboard() {
           </button>
         </div>
 
-        {loading && (
-          <div className="flex justify-center items-center h-64">
-            <div className="animate-spin h-8 w-8 border-4 border-gray-200 border-t-gray-900 rounded-full"></div>
-          </div>
-        )}
+        {loading && <LoadingSpinner />}
 
         {!loading && activeTab === 'pending' && (
           pendingBorrowings.length === 0 ? (
-            <Card className="text-center py-12">
-              <p className="text-gray-500">No pending requests</p>
-            </Card>
+            <Card><EmptyState title="No pending requests" description="New borrow requests will appear here." /></Card>
           ) : (
             <div className="grid gap-4">
               {pendingBorrowings.map((borrowing) => (
@@ -445,9 +335,7 @@ export default function AdminDashboard() {
 
         {!loading && activeTab === 'returns' && (
           pendingReturnBorrowings.length === 0 ? (
-            <Card className="text-center py-12">
-              <p className="text-gray-500">No pending return requests</p>
-            </Card>
+            <Card><EmptyState title="No return requests" description="User return requests will appear here." /></Card>
           ) : (
             <div className="grid gap-4">
               {pendingReturnBorrowings.map((borrowing) => (
@@ -483,9 +371,7 @@ export default function AdminDashboard() {
         {!loading && activeTab === 'all' && (
           <div className="grid gap-4">
             {allBorrowings.length === 0 ? (
-              <Card className="text-center py-12">
-                <p className="text-gray-500">No borrowings yet</p>
-              </Card>
+              <Card><EmptyState title="No borrowings yet" /></Card>
             ) : (
               allBorrowings.map((borrowing) => (
                 <Card key={borrowing.id} className="flex items-start justify-between gap-4">
@@ -613,13 +499,9 @@ export default function AdminDashboard() {
             )}
 
             {booksLoading ? (
-              <div className="flex justify-center items-center h-32">
-                <div className="animate-spin h-8 w-8 border-4 border-gray-200 border-t-gray-900 rounded-full" />
-              </div>
+              <LoadingSpinner className="h-8 w-8" label="" />
             ) : books.length === 0 ? (
-              <Card className="text-center py-12">
-                <p className="text-gray-500">No books in the library yet.</p>
-              </Card>
+              <Card><EmptyState title="No books in the library" description="Add your first book to get started." /></Card>
             ) : (
               <div className="grid gap-3">
                 {books.map(book => (
@@ -664,13 +546,9 @@ export default function AdminDashboard() {
             </div>
 
             {usersLoading ? (
-              <div className="flex justify-center items-center h-32">
-                <div className="animate-spin h-8 w-8 border-4 border-gray-200 border-t-gray-900 rounded-full" />
-              </div>
+              <LoadingSpinner className="h-8 w-8" label="" />
             ) : usersList.length === 0 ? (
-              <Card className="text-center py-12">
-                <p className="text-gray-500">No users found.</p>
-              </Card>
+              <Card><EmptyState title="No users found" description="Registered users will appear here after section 7 SQL is applied." /></Card>
             ) : (
               <div className="space-y-3">
                 <div className="hidden md:grid md:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-4 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
@@ -767,9 +645,6 @@ export default function AdminDashboard() {
             )}
           </div>
         )}
-      </main>
-
-      {/* Edit Credit Modal */}
       {editingUser && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
@@ -787,7 +662,6 @@ export default function AdminDashboard() {
                 {getCreditTier(editingUser.credit_score ?? 100).name}
               </span>
             </p>
-            
             <div className="my-5">
               <label className="text-xs font-medium text-gray-700 block mb-1">
                 Credit Score (0 - 200)
@@ -801,24 +675,22 @@ export default function AdminDashboard() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
               />
               <p className="text-[10px] text-gray-400 mt-1">
-                Adjusting this will change the user's maximum book borrowing capacity.
+                Adjusting this will change the user&apos;s maximum book borrowing capacity.
               </p>
             </div>
-
             <div className="flex gap-3 justify-end pt-2">
               <button
+                type="button"
                 onClick={() => setEditingUser(null)}
                 className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition"
               >
                 Cancel
               </button>
-              <Button onClick={handleCreditUpdateSubmit}>
-                Save Score
-              </Button>
+              <Button onClick={handleCreditUpdateSubmit}>Save Score</Button>
             </div>
           </div>
         </div>
       )}
-    </div>
+    </AdminShell>
   )
 }
