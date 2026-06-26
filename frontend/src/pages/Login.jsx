@@ -55,12 +55,46 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [mfaState, setMfaState] = useState({ factorId: null, challengeId: null })
 
+  const [isLockedOut, setIsLockedOut] = useState(false)
+  const [lockoutTimeLeft, setLockoutTimeLeft] = useState(0)
+  const MAX_ATTEMPTS = 3
+  const LOCKOUT_DURATION = 15 * 60 * 1000 // 15 minutes
+
+  // --- NEW USEEFFECT FOR LOCKOUT ---
+  useEffect(() => {
+    const checkLockout = () => {
+      const lockoutTimestamp = localStorage.getItem('lockoutTimestamp')
+      if (lockoutTimestamp) {
+        const timePassed = Date.now() - parseInt(lockoutTimestamp, 10)
+        if (timePassed < LOCKOUT_DURATION) {
+          setIsLockedOut(true)
+          setLockoutTimeLeft(Math.ceil((LOCKOUT_DURATION - timePassed) / 60000))
+        } else {
+          setIsLockedOut(false) // Fix: Explicitly reset the lockout state
+          localStorage.removeItem('lockoutTimestamp')
+          localStorage.removeItem('loginAttempts')
+        }
+      }
+    }
+
+    checkLockout() // Run immediately on mount
+    const interval = setInterval(checkLockout, 1000) // Keep the timer ticking every second
+
+    return () => clearInterval(interval) // Cleanup the interval on unmount
+  }, [LOCKOUT_DURATION])
+
   // [MFA] [AUDIT-LOG] handlePasswordSubmit — ISO 27001 A.9.4 password authentication step.
   // Generic error messages are intentional to prevent user enumeration attacks.
   // Failed attempts are logged via logEvent before any error is displayed.
   const handlePasswordSubmit = async (e) => {
     e.preventDefault()
     setServerError('')
+
+    // --- NEW: PREVENT SUBMISSION IF LOCKED OUT ---
+    if (isLockedOut) {
+      setServerError(`Account locked. Try again in ${lockoutTimeLeft} minutes.`)
+      return
+    }
 
     const { data: parsed, errors: validationErrors } = validate(loginSchema, { email, password })
     if (validationErrors) { setErrors(validationErrors); return }
@@ -71,16 +105,29 @@ export default function Login() {
       const { data, error } = await signIn(parsed.email, parsed.password)
 
       if (error) {
-        // [AUDIT-LOG] Log the failure without revealing whether the email exists.
         await logEvent(AUDIT_EVENTS.LOGIN_FAILURE, { reason: 'invalid_credentials' }, parsed.email, null)
-        setServerError('Invalid email or password.')
+        
+        // --- NEW: TRACK FAILED ATTEMPTS ---
+        const currentAttempts = parseInt(localStorage.getItem('loginAttempts') || '0', 10) + 1
+        localStorage.setItem('loginAttempts', currentAttempts)
+
+        if (currentAttempts >= MAX_ATTEMPTS) {
+          setIsLockedOut(true)
+          localStorage.setItem('lockoutTimestamp', Date.now().toString())
+          setLockoutTimeLeft(LOCKOUT_DURATION / 60000)
+          setServerError('Too many failed attempts. Account locked for 15 minutes.')
+        } else {
+          setServerError(`Invalid email or password. ${MAX_ATTEMPTS - currentAttempts} attempts remaining.`)
+        }
         return
       }
 
+      // --- NEW: CLEAR ATTEMPTS ON SUCCESS ---
+      localStorage.removeItem('loginAttempts')
+      localStorage.removeItem('lockoutTimestamp')
+
       await logEvent(AUDIT_EVENTS.LOGIN_SUCCESS, {}, parsed.email, data.user.id)
 
-      // [MFA] Check for a verified TOTP factor; if found, issue a challenge instead
-      // of navigating directly to /mfa-setup (enrollment is already done).
       const { data: factors } = await supabase.auth.mfa.listFactors()
       const totp = factors?.totp?.find((f) => f.status === 'verified')
 
@@ -95,7 +142,6 @@ export default function Login() {
         setMfaState({ factorId: totp.id, challengeId: challenge.id })
         setStep('totp')
       } else {
-        // Only prompt for MFA setup on the very first sign-in; skip to dashboard on subsequent logins
         const promptKey = `mfa_setup_prompted_${data.user.id}`
         if (!localStorage.getItem(promptKey)) {
           localStorage.setItem(promptKey, 'true')
@@ -194,8 +240,8 @@ export default function Login() {
                   {serverError}
                 </p>
               )}
-              <Button type="submit" loading={loading} className="w-full mt-2">
-                Sign in
+              <Button type="submit" loading={loading} disabled={isLockedOut} className="w-full mt-2">
+                  {isLockedOut ? `Locked out (${lockoutTimeLeft}m)` : 'Sign in'}
               </Button>
             </form>
           ) : (
