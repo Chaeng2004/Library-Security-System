@@ -8,6 +8,7 @@ import { formatDate } from '../lib/format'
 import { AdminShell } from '../components/layout/AdminShell'
 import { supabase } from '../lib/supabaseClient'
 import { Card } from '../components/ui/Card'
+import { StatCard } from '../components/ui/StatCard'
 import { Button } from '../components/ui/Button'
 import { TextInput } from '../components/ui/TextInput'
 import { ConfirmModal } from '../components/ui/ConfirmModal'
@@ -237,24 +238,34 @@ export default function AdminDashboard() {
 
       <div className="flex flex-col gap-6">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <Card>
-            <p className="text-xs text-gray-500">Pending Requests</p>
-            <p className="text-3xl font-bold text-yellow-600 mt-1">{loading ? '…' : pendingBorrowings.length}</p>
-          </Card>
-          <Card>
-            <p className="text-xs text-gray-500">Return Requests</p>
-            <p className="text-3xl font-bold text-blue-600 mt-1">{loading ? '…' : pendingReturnBorrowings.length}</p>
-          </Card>
-          <Card>
-            <p className="text-xs text-gray-500">Active Borrowings</p>
-            <p className="text-3xl font-bold text-green-600 mt-1">
-              {loading ? '…' : allBorrowings.filter(b => b.status === 'active').length}
-            </p>
-          </Card>
-          <Card>
-            <p className="text-xs text-gray-500">Total Borrowings</p>
-            <p className="text-3xl font-bold text-gray-900 mt-1">{loading ? '…' : allBorrowings.length}</p>
-          </Card>
+          <StatCard
+            label="Pending Requests"
+            value={loading ? '…' : String(pendingBorrowings.length)}
+            variant="yellow"
+            icon="clock"
+            prominent
+          />
+          <StatCard
+            label="Return Requests"
+            value={loading ? '…' : String(pendingReturnBorrowings.length)}
+            variant="blue"
+            icon="return"
+            prominent
+          />
+          <StatCard
+            label="Active Borrowings"
+            value={loading ? '…' : String(allBorrowings.filter(b => b.status === 'active').length)}
+            variant="green"
+            icon="book"
+            prominent
+          />
+          <StatCard
+            label="Total Borrowings"
+            value={loading ? '…' : String(allBorrowings.length)}
+            variant="gray"
+            icon="clipboard"
+            prominent
+          />
         </div>
 
         <div className="flex gap-2 flex-wrap">

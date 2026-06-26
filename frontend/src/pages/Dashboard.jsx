@@ -8,7 +8,7 @@ import { getBorrowLimit } from '../lib/credit'
 import { formatDateTime } from '../lib/format'
 import { AppShell } from '../components/layout/AppShell'
 import { Card } from '../components/ui/Card'
-import { StatCard } from '../components/ui/StatCard'
+import { StatCard, QuickActionCard } from '../components/ui/StatCard'
 import { CreditScoreCard } from '../components/ui/CreditScoreCard'
 import { LoadingSpinner } from '../components/ui/LoadingSpinner'
 import { EmptyState } from '../components/ui/EmptyState'
@@ -147,6 +147,9 @@ export default function Dashboard() {
 
         {!statsLoading && overdueCount > 0 && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex gap-3">
+            <svg className="w-5 h-5 text-red-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
             <div>
               <p className="text-sm font-semibold text-red-800">Overdue books</p>
               <p className="text-xs text-red-600 mt-0.5">
@@ -157,19 +160,52 @@ export default function Dashboard() {
         )}
 
         {!statsLoading && creditScore < 60 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-            <p className="text-sm font-semibold text-amber-800">Low credit score ({creditScore})</p>
-            <p className="text-xs text-amber-700 mt-0.5">
-              Your borrowing limit is {getBorrowLimit(creditScore)} book{getBorrowLimit(creditScore) !== 1 ? 's' : ''}. Return books on time to improve your score.
-            </p>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3">
+            <svg className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M12 22a10 10 0 110-20 10 10 0 010 20z" />
+            </svg>
+            <div>
+              <p className="text-sm font-semibold text-amber-800">Low credit score ({creditScore})</p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                Your borrowing limit is {getBorrowLimit(creditScore)} book{getBorrowLimit(creditScore) !== 1 ? 's' : ''}. Return books on time to improve your score.
+              </p>
+            </div>
           </div>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <StatCard label="Active loans" value={statsLoading ? '…' : String(activeBorrowings.length)} />
-          <StatCard label="Pending approval" value={statsLoading ? '…' : String(pendingBorrowings.length)} />
-          <StatCard label="Overdue" value={statsLoading ? '…' : String(overdueCount)} />
-          <StatCard label="Recent returns" value={statsLoading ? '…' : String(recentBorrowings.length)} helper="Last 3" />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <StatCard
+            label="Active loans"
+            value={statsLoading ? '…' : String(activeBorrowings.length)}
+            helper="Currently borrowed"
+            variant="green"
+            icon="book"
+            prominent
+          />
+          <StatCard
+            label="Pending approval"
+            value={statsLoading ? '…' : String(pendingBorrowings.length)}
+            helper="Waiting for admin"
+            variant="yellow"
+            icon="clock"
+            prominent
+          />
+          <StatCard
+            label="Overdue"
+            value={statsLoading ? '…' : String(overdueCount)}
+            helper="Past due date"
+            variant="red"
+            icon="alert"
+            prominent
+          />
+          <StatCard
+            label="Recent returns"
+            value={statsLoading ? '…' : String(recentBorrowings.length)}
+            helper="Last 3 returns"
+            variant="blue"
+            icon="return"
+            prominent
+          />
         </div>
 
         {statsLoading ? (
@@ -258,39 +294,36 @@ export default function Dashboard() {
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <button
-            type="button"
+          <QuickActionCard
+            title="Browse Books"
+            description="Discover and borrow books"
+            variant="blue"
+            icon="book"
             onClick={() => navigate('/books')}
-            className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 text-left hover:shadow-md transition-shadow"
-          >
-            <p className="text-sm font-semibold text-gray-900">Browse Books</p>
-            <p className="text-xs text-gray-500 mt-1">Discover and borrow books</p>
-          </button>
-          <button
-            type="button"
+          />
+          <QuickActionCard
+            title="My Borrowings"
+            description={`${openLoans} open loan${openLoans !== 1 ? 's' : ''}`}
+            variant="green"
+            icon="clipboard"
             onClick={() => navigate('/my-borrowings')}
-            className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 text-left hover:shadow-md transition-shadow"
-          >
-            <p className="text-sm font-semibold text-gray-900">My Borrowings</p>
-            <p className="text-xs text-gray-500 mt-1">{openLoans} open loan{openLoans !== 1 ? 's' : ''}</p>
-          </button>
-          <button
-            type="button"
+          />
+          <QuickActionCard
+            title="Profile"
+            description="Manage your account"
+            variant="purple"
+            icon="users"
             onClick={() => navigate('/profile')}
-            className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 text-left hover:shadow-md transition-shadow"
-          >
-            <p className="text-sm font-semibold text-gray-900">Profile</p>
-            <p className="text-xs text-gray-500 mt-1">Manage your account</p>
-          </button>
+          />
         </div>
 
         <Card>
           <SectionTitle title="Account & security" description="Live session details from Supabase Auth" />
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <StatCard label="Role" value={role ?? 'user'} helper="From user_profiles" />
-            <StatCard label="Authentication" value={mfaLabel} />
-            <StatCard label="Borrow limit" value={`${getBorrowLimit(creditScore)} books`} helper={`Score: ${creditScore}`} />
-            <StatCard label="Idle timeout" value={formatSeconds(secondsLeft)} helper={`${idleMinutes} min max · auto sign-out`} />
+            <StatCard label="Role" value={role ?? 'user'} helper="From user_profiles" variant="gray" icon="users" />
+            <StatCard label="Authentication" value={mfaLabel} variant="purple" icon="shield" />
+            <StatCard label="Borrow limit" value={`${getBorrowLimit(creditScore)} books`} helper={`Score: ${creditScore}`} variant="blue" icon="chart" />
+            <StatCard label="Idle timeout" value={formatSeconds(secondsLeft)} helper={`${idleMinutes} min max · auto sign-out`} variant="yellow" icon="timer" />
           </div>
         </Card>
 
