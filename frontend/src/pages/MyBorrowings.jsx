@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { getUserBorrowings, returnBook } from '../lib/api'
+import { getUserBorrowings, requestReturn } from '../lib/api'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 
@@ -33,13 +33,13 @@ export default function MyBorrowings() {
     fetchBorrowings()
   }, [fetchBorrowings])
 
-  const handleReturn = async (borrowingId, bookId) => {
+  const handleRequestReturn = async (borrowingId) => {
     setReturnStatus(prev => ({ ...prev, [borrowingId]: 'loading' }))
-    const { error } = await returnBook(borrowingId, bookId)
+    const { error } = await requestReturn(borrowingId)
     
     if (error) {
       setReturnStatus(prev => ({ ...prev, [borrowingId]: 'error' }))
-      alert('Failed to return book: ' + error.message)
+      alert('Failed to request return: ' + error.message)
     } else {
       setReturnStatus(prev => ({ ...prev, [borrowingId]: 'success' }))
       fetchBorrowings()
@@ -55,6 +55,7 @@ export default function MyBorrowings() {
   }
 
   const activeBorrowings = borrowings.filter(b => b.status === 'active')
+  const returnPendingBorrowings = borrowings.filter(b => b.status === 'return_pending')
   const pendingBorrowings = borrowings.filter(b => b.status === 'pending')
   const returnedBorrowings = borrowings.filter(b => b.status === 'returned')
 
@@ -100,7 +101,7 @@ export default function MyBorrowings() {
             onClick={() => navigate('/my-borrowings')}
             className="px-4 py-2 text-sm font-medium text-gray-900 bg-gray-100 rounded-md"
           >
-            My Borrowings ({activeBorrowings.length})
+            My Borrowings ({activeBorrowings.length + returnPendingBorrowings.length})
           </button>
           <button
             onClick={() => navigate('/profile')}
@@ -151,6 +152,34 @@ export default function MyBorrowings() {
               )}
             </div>
 
+            {/* Return pending — awaiting admin confirmation */}
+            {returnPendingBorrowings.length > 0 && (
+              <div className="mb-12">
+                <h2 className="text-xl font-bold text-gray-900 mb-4">Return Pending Confirmation</h2>
+                <div className="grid gap-4">
+                  {returnPendingBorrowings.map((borrowing) => (
+                    <Card key={borrowing.id} className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <h3 className="text-lg font-semibold text-gray-900">
+                          {borrowing.books?.title || 'Unknown Book'}
+                        </h3>
+                        <p className="text-sm text-gray-600 mb-2">
+                          {borrowing.books?.author || 'Unknown Author'}
+                        </p>
+                        <div className="text-xs text-gray-500 space-y-1">
+                          <p>Borrowed: {formatDate(borrowing.borrowed_date)}</p>
+                          {borrowing.due_date && <p>Due: {formatDate(borrowing.due_date)}</p>}
+                        </div>
+                      </div>
+                      <span className="ml-4 px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                        Awaiting Admin
+                      </span>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Active Borrowings */}
             <div className="mb-12">
               <h2 className="text-xl font-bold text-gray-900 mb-4">Active Borrowings</h2>
@@ -171,16 +200,17 @@ export default function MyBorrowings() {
                         </p>
                         <div className="text-xs text-gray-500 space-y-1">
                           <p>Borrowed: {formatDate(borrowing.borrowed_date)}</p>
+                          {borrowing.due_date && <p>Due: {formatDate(borrowing.due_date)}</p>}
                           <p>ISBN: {borrowing.books?.isbn || 'N/A'}</p>
                         </div>
                       </div>
                       <Button
-                        onClick={() => handleReturn(borrowing.id, borrowing.book_id)}
+                        onClick={() => handleRequestReturn(borrowing.id)}
                         loading={returnStatus[borrowing.id] === 'loading'}
                         variant={returnStatus[borrowing.id] === 'success' ? 'secondary' : 'primary'}
                         className="ml-4"
                       >
-                        {returnStatus[borrowing.id] === 'success' ? '✓ Returned' : 'Return Book'}
+                        {returnStatus[borrowing.id] === 'success' ? '✓ Requested' : 'Request Return'}
                       </Button>
                     </Card>
                   ))}

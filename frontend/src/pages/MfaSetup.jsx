@@ -9,6 +9,30 @@ import { Card } from '../components/ui/Card'
 import { TextInput } from '../components/ui/TextInput'
 import { Button } from '../components/ui/Button'
 
+const MFA_FRIENDLY_NAME = 'Authenticator app'
+const MFA_ISSUER = 'LibrarySecuritySystem'
+
+function getTotpFactors(factorsData) {
+  if (!factorsData) return []
+  if (Array.isArray(factorsData.totp) && factorsData.totp.length > 0) return factorsData.totp
+  if (Array.isArray(factorsData.all)) {
+    return factorsData.all.filter(
+      (f) => f.factor_type === 'totp' || f.factorType === 'totp'
+    )
+  }
+  return factorsData.totp ?? []
+}
+
+async function unenrollTotpFactors(factors, { onlyUnverified = true } = {}) {
+  const toRemove = factors.filter((f) => !onlyUnverified || f.status !== 'verified')
+  const failures = []
+  for (const f of toRemove) {
+    const { error } = await supabase.auth.mfa.unenroll({ factorId: f.id })
+    if (error) failures.push(error.message)
+  }
+  return failures
+}
+
 // [MFA] MfaSetup — ISO 27001 A.9.4 first-time TOTP enrollment.
 // The factor is not trusted until the user confirms a valid code (status becomes 'verified').
 // To look up enrollment logic search for "startEnrollment".
@@ -26,10 +50,21 @@ export default function MfaSetup() {
   const [loading, setLoading] = useState(false)
   const [enrolling, setEnrolling] = useState(true)
   const [skipping, setSkipping] = useState(false)
+  const [resetting, setResetting] = useState(false)
   // [MFA] true when a verified factor already exists — skip enrollment, just challenge.
   const [isReauth, setIsReauth] = useState(false)
+  // [MFA] Resume an in-progress enrollment (no QR available).
+  const [resumeWithoutQr, setResumeWithoutQr] = useState(false)
 
   const enrollStarted = useRef(false)
+
+  const enrollNewTotp = useCallback(async () => {
+    return supabase.auth.mfa.enroll({
+      factorType: 'totp',
+      issuer: MFA_ISSUER,
+      friendlyName: MFA_FRIENDLY_NAME,
+    })
+  }, [])
 
   // [MFA] startEnrollment — ISO 27001 A.9.4. Handles two cases:
   // 1. No verified factor → enroll a new TOTP factor (shows QR code).
@@ -37,6 +72,8 @@ export default function MfaSetup() {
   // To change the TOTP issuer name search for "issuer:" in this function.
   const startEnrollment = useCallback(async () => {
     setEnrolling(true)
+    setServerError('')
+    setResumeWithoutQr(false)
 
     const { data: existing, error: listError } = await supabase.auth.mfa.listFactors()
 
@@ -48,7 +85,8 @@ export default function MfaSetup() {
       return
     }
 
-    const verifiedFactor = existing?.totp?.find((f) => f.status === 'verified')
+    const totpFactors = getTotpFactors(existing)
+    const verifiedFactor = totpFactors.find((f) => f.status === 'verified')
 
     if (verifiedFactor) {
       // [MFA] Already enrolled — challenge the existing factor to reach aal2.
@@ -72,21 +110,49 @@ export default function MfaSetup() {
       return
     }
 
-    // [MFA] Clean up leftover unverified factors before enrolling a new one —
-    // Supabase rejects enroll() if an unverified factor with the same name exists.
-    const unverified = existing?.totp?.filter((f) => f.status !== 'verified') ?? []
-    for (const f of unverified) {
-      await supabase.auth.mfa.unenroll({ factorId: f.id })
+    const unverified = totpFactors.filter((f) => f.status !== 'verified')
+
+    // Resume a single in-progress enrollment instead of creating a duplicate factor.
+    if (unverified.length === 1) {
+      const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({
+        factorId: unverified[0].id,
+      })
+      if (!challengeError) {
+        setEnrollData({ factorId: unverified[0].id, qrCode: null, secret: null })
+        setChallengeId(challenge.id)
+        setIsReauth(false)
+        setResumeWithoutQr(true)
+        setEnrolling(false)
+        return
+      }
     }
 
-    const { data, error } = await supabase.auth.mfa.enroll({ factorType: 'totp', issuer: 'LibrarySecuritySystem' })
+    // [MFA] Clean up leftover unverified factors before enrolling a new one —
+    // Supabase rejects enroll() if an unverified factor with the same name exists.
+    const unenrollFailures = await unenrollTotpFactors(unverified)
+    if (unenrollFailures.length > 0) {
+      setServerError(
+        'Could not remove a previous MFA setup. Use "Reset MFA setup" below, or ask an admin to clear MFA factors in Supabase Dashboard → Authentication → Users.'
+      )
+      setEnrolling(false)
+      return
+    }
+
+    let { data, error } = await enrollNewTotp()
+    if (error?.message?.includes('already exists')) {
+      await unenrollTotpFactors(totpFactors, { onlyUnverified: true })
+      ;({ data, error } = await enrollNewTotp())
+    }
+
     if (error) {
       if (isStaleSessionError(error)) {
         await supabase.auth.signOut()
         navigate('/login', { replace: true })
         return
       }
-      setServerError(`MFA setup failed: ${error.message}`)
+      setServerError(
+        `MFA setup failed: ${error.message}. Use "Reset MFA setup" below if this keeps happening.`
+      )
       setEnrolling(false)
       return
     }
@@ -106,7 +172,28 @@ export default function MfaSetup() {
     setEnrollData({ factorId: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret })
     setChallengeId(challenge.id)
     setEnrolling(false)
-  }, [navigate])
+  }, [navigate, enrollNewTotp])
+
+  const handleResetMfa = async () => {
+    setResetting(true)
+    setServerError('')
+    try {
+      const { data: existing } = await supabase.auth.mfa.listFactors()
+      const totpFactors = getTotpFactors(existing)
+      const failures = await unenrollTotpFactors(totpFactors, { onlyUnverified: true })
+      if (failures.length > 0) {
+        setServerError(
+          'Reset failed — remove MFA factors manually in Supabase Dashboard → Authentication → Users → select user → MFA factors.'
+        )
+        return
+      }
+      enrollStarted.current = false
+      enrollStarted.current = true
+      await startEnrollment()
+    } finally {
+      setResetting(false)
+    }
+  }
 
   useEffect(() => {
     if (session === undefined) return
@@ -121,8 +208,11 @@ export default function MfaSetup() {
   // without MFA. Only available during first-time enrollment, not during re-auth.
   const handleSkip = async () => {
     setSkipping(true)
-    if (enrollData?.factorId) {
-      await supabase.auth.mfa.unenroll({ factorId: enrollData.factorId }).catch(() => {})
+    try {
+      const { data: existing } = await supabase.auth.mfa.listFactors()
+      await unenrollTotpFactors(getTotpFactors(existing), { onlyUnverified: true })
+    } catch {
+      // Proceed even if cleanup fails — user chose to skip.
     }
     navigate(fromProfile ? '/profile' : '/dashboard', { replace: true })
   }
@@ -178,7 +268,9 @@ export default function MfaSetup() {
           <p className="mt-1 text-sm text-gray-500">
             {isReauth
               ? 'Open your authenticator app and enter the 6-digit code.'
-              : 'Scan the QR code with Google Authenticator, Authy, or any TOTP app.'}
+              : resumeWithoutQr
+                ? 'Enter the code from your authenticator app to finish setup, or reset below if you lost access.'
+                : 'Scan the QR code with Google Authenticator, Authy, or any TOTP app.'}
           </p>
         </div>
 
@@ -249,6 +341,16 @@ export default function MfaSetup() {
                       </p>
                     </>
                   )
+                )}
+                {(serverError || resumeWithoutQr) && !isReauth && (
+                  <button
+                    type="button"
+                    onClick={handleResetMfa}
+                    disabled={resetting}
+                    className="text-sm text-red-600 hover:text-red-800 underline text-center disabled:opacity-50"
+                  >
+                    {resetting ? 'Resetting…' : 'Reset MFA setup'}
+                  </button>
                 )}
               </form>
             </>

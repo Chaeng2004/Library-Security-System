@@ -62,18 +62,36 @@ export async function rejectBorrowing(borrowingId) {
   return { error }
 }
 
-export async function returnBook(borrowingId, bookId) {
+export async function requestReturn(borrowingId) {
+  const { data, error } = await supabase
+    .from('borrowings')
+    .update({ status: 'return_pending' })
+    .eq('id', borrowingId)
+    .eq('status', 'active')
+    .select()
+
+  return { data, error }
+}
+
+/** Admin confirms a user return request; credit trigger fires on return_pending → returned. */
+export async function confirmReturn(borrowingId, bookId) {
   const { data, error } = await supabase
     .from('borrowings')
     .update({ status: 'returned', returned_date: new Date().toISOString() })
     .eq('id', borrowingId)
+    .eq('status', 'return_pending')
     .select()
-  
+
   if (!error) {
     await supabase.rpc('update_book_availability', { p_book_id: bookId, p_available: true })
   }
-  
+
   return { data, error }
+}
+
+/** @deprecated Use confirmReturn — kept for any legacy callers */
+export async function returnBook(borrowingId, bookId) {
+  return confirmReturn(borrowingId, bookId)
 }
 
 export async function getUserBorrowings(userId) {
@@ -118,6 +136,16 @@ export async function getPendingBorrowings() {
     .from('borrowings_with_email')
     .select('*, books(*)')
     .eq('status', 'pending')
+    .order('borrowed_date', { ascending: false })
+  return { data, error }
+}
+
+export async function getPendingReturnBorrowings() {
+  await supabase.rpc('penalize_overdue_borrowings')
+  const { data, error } = await supabase
+    .from('borrowings_with_email')
+    .select('*, books(*)')
+    .eq('status', 'return_pending')
     .order('borrowed_date', { ascending: false })
   return { data, error }
 }
@@ -206,7 +234,7 @@ export async function getUserActiveBorrowings(userId) {
     .from('borrowings')
     .select('*, books(*)')
     .eq('user_id', userId)
-    .eq('status', 'active')
+    .in('status', ['active', 'return_pending'])
     .order('due_date', { ascending: true })
   return { data, error }
 }

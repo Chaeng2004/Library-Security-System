@@ -34,14 +34,18 @@ CREATE OR REPLACE FUNCTION public.handle_borrowing_return()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE
   v_credit_change INTEGER := 0;
-  v_current_credit INTEGER;
-  v_new_credit INTEGER;
+  v_due_date DATE;
+  v_return_date DATE;
 BEGIN
-  -- Only trigger when status changes to 'returned' from 'active'
-  IF NEW.status = 'returned' AND OLD.status = 'active' THEN
+  -- Only trigger when admin confirms return (return_pending → returned)
+  IF NEW.status = 'returned' AND OLD.status = 'return_pending' THEN
+    -- Compare by date (not timestamp) so returns on due-date are treated as on-time.
+    v_due_date := NEW.due_date::date;
+    v_return_date := COALESCE(NEW.returned_date, NOW())::date;
+
     -- Check if returned early (3+ days before due_date), on-time, or late
-    IF NEW.returned_date <= NEW.due_date THEN
-      IF (NEW.due_date::date - NEW.returned_date::date) >= 3 THEN
+    IF v_return_date <= v_due_date THEN
+      IF (v_due_date - v_return_date) >= 3 THEN
         v_credit_change := 15; -- Early return bonus
       ELSE
         v_credit_change := 10; -- On-time return bonus
@@ -50,24 +54,13 @@ BEGIN
       v_credit_change := -20; -- Late return penalty
     END IF;
 
-    -- Fetch user's current credit score
-    SELECT credit_score INTO v_current_credit FROM public.user_profiles WHERE id = NEW.user_id;
-    IF v_current_credit IS NULL THEN
-      v_current_credit := 100;
-    END IF;
+    -- Ensure a profile row exists, then apply delta with clamp [0, 200].
+    INSERT INTO public.user_profiles (id, first_name, last_name, phone, address, library_id, role, credit_score)
+    VALUES (NEW.user_id, '', '', '', '', '', 'user', 100)
+    ON CONFLICT (id) DO NOTHING;
 
-    v_new_credit := v_current_credit + v_credit_change;
-    
-    -- Clamp score between 0 and 200
-    IF v_new_credit < 0 THEN
-      v_new_credit := 0;
-    ELSIF v_new_credit > 200 THEN
-      v_new_credit := 200;
-    END IF;
-
-    -- Update the user's profile
     UPDATE public.user_profiles
-    SET credit_score = v_new_credit
+    SET credit_score = GREATEST(0, LEAST(200, COALESCE(credit_score, 100) + v_credit_change))
     WHERE id = NEW.user_id;
   END IF;
   
@@ -86,28 +79,19 @@ CREATE OR REPLACE FUNCTION public.penalize_overdue_borrowings()
 RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE
   r RECORD;
-  v_current_credit INTEGER;
-  v_new_credit INTEGER;
   v_now TIMESTAMPTZ := NOW();
 BEGIN
   FOR r IN 
     SELECT id, user_id FROM public.borrowings 
-    WHERE status = 'active' AND due_date < v_now AND overdue_penalized = FALSE
+    WHERE status IN ('active', 'return_pending') AND due_date < v_now AND overdue_penalized = FALSE
   LOOP
-    -- Get user's current credit
-    SELECT credit_score INTO v_current_credit FROM public.user_profiles WHERE id = r.user_id;
-    IF v_current_credit IS NULL THEN
-      v_current_credit := 100;
-    END IF;
+    -- Ensure profile exists before applying overdue penalty.
+    INSERT INTO public.user_profiles (id, first_name, last_name, phone, address, library_id, role, credit_score)
+    VALUES (r.user_id, '', '', '', '', '', 'user', 100)
+    ON CONFLICT (id) DO NOTHING;
 
-    v_new_credit := v_current_credit - 20; -- Overdue penalty
-    IF v_new_credit < 0 THEN
-      v_new_credit := 0;
-    END IF;
-
-    -- Update user profile
     UPDATE public.user_profiles
-    SET credit_score = v_new_credit
+    SET credit_score = GREATEST(0, LEAST(200, COALESCE(credit_score, 100) - 20))
     WHERE id = r.user_id;
 
     -- Mark borrowing as penalized so we don't repeat the penalty
@@ -118,7 +102,16 @@ BEGIN
 END;
 $$;
 
--- 6. Promote a user to admin (replace the email before running)
+-- 6. Allow return_pending status on borrowings (run if status is constrained)
+-- ALTER TABLE public.borrowings DROP CONSTRAINT IF EXISTS borrowings_status_check;
+-- ALTER TABLE public.borrowings ADD CONSTRAINT borrowings_status_check
+--   CHECK (status IN ('pending', 'active', 'return_pending', 'returned'));
+
+-- 7. Promote a user to admin (replace the email before running)
 -- UPDATE public.user_profiles
 --   SET role = 'admin'
 --   WHERE id = (SELECT id FROM auth.users WHERE email = 'YOUR_ADMIN_EMAIL_HERE');
+
+-- 8. Verify credit-score automation is deployed (run after sections 4–5)
+-- SELECT tgname FROM pg_trigger WHERE tgname = 'trg_handle_borrowing_return';
+-- SELECT proname FROM pg_proc WHERE proname IN ('handle_borrowing_return', 'penalize_overdue_borrowings');

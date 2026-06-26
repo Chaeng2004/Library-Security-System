@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { getBooks, borrowBook, getUserBorrowings, getUserProfile } from '../lib/api'
+import { getMinDueDateString, validate, dueDateSchema } from '../lib/validation'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { TextInput } from '../components/ui/TextInput'
@@ -23,6 +24,16 @@ function getBookCover(title) {
   return BOOK_COVERS[title] ?? null
 }
 
+const OPEN_BORROW_STATUSES = ['pending', 'active', 'return_pending']
+
+function isOpenBorrowing(status) {
+  return OPEN_BORROW_STATUSES.includes(status)
+}
+
+function isOverdueBorrowing(b) {
+  return (b.status === 'active' || b.status === 'return_pending') && new Date(b.due_date) < new Date()
+}
+
 export default function Books() {
   const navigate = useNavigate()
   const { user, signOut, role } = useAuth()
@@ -36,6 +47,7 @@ export default function Books() {
   const [selectedBookId, setSelectedBookId] = useState(null)
   const [detailBookId, setDetailBookId] = useState(null)
   const [dueDate, setDueDate] = useState('')
+  const [dueDateError, setDueDateError] = useState('')
   const [creditScore, setCreditScore] = useState(100)
 
   const fetchBooks = useCallback(async (search = '', onlyAvailable = false) => {
@@ -86,21 +98,24 @@ export default function Books() {
 
   const handleBorrow = async (bookId) => {
     setSelectedBookId(bookId)
-    // Pre-fill due date to today + 14 days
+    setDueDateError('')
+    // Default due date: today + 14 days (must still be after today)
     const d = new Date()
     d.setDate(d.getDate() + 14)
     setDueDate(d.toISOString().split('T')[0])
   }
 
   const handleConfirmBorrow = async () => {
-    if (!dueDate) {
-      alert('Please select a due date')
+    const { errors } = validate(dueDateSchema, dueDate)
+    if (errors) {
+      setDueDateError(errors.dueDate ?? errors._ ?? 'Invalid due date')
       return
     }
+    setDueDateError('')
 
     // Prevent duplicate requests
     const alreadyRequested = borrowings.some(
-      b => b.book_id === selectedBookId && (b.status === 'pending' || b.status === 'active')
+      b => b.book_id === selectedBookId && isOpenBorrowing(b.status)
     )
     if (alreadyRequested) {
       alert('You already have a pending or active request for this book.')
@@ -127,10 +142,7 @@ export default function Books() {
     }
   }
 
-  const getTodayDate = () => {
-    const today = new Date()
-    return today.toISOString().split('T')[0]
-  }
+  const minDueDate = getMinDueDateString()
 
   const handleLogout = async () => {
     await signOut('user')
@@ -157,13 +169,19 @@ export default function Books() {
               <input
                 type="date"
                 value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                min={getTodayDate()}
+                onChange={(e) => {
+                  setDueDate(e.target.value)
+                  setDueDateError('')
+                }}
+                min={minDueDate}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-900"
               />
               <p className="text-xs text-gray-500 mt-1">
-                Select a date from today onwards
+                Due date must be after today
               </p>
+              {dueDateError && (
+                <p className="text-xs text-red-600 mt-1">{dueDateError}</p>
+              )}
             </div>
 
             <div className="flex gap-3 justify-end">
@@ -227,7 +245,7 @@ export default function Books() {
             onClick={() => navigate('/my-borrowings')}
             className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
           >
-            My Borrowings ({borrowings.filter(b => b.status === 'active').length})
+            My Borrowings ({borrowings.filter(b => b.status === 'active' || b.status === 'return_pending').length})
           </button>
           <button
             onClick={() => navigate('/profile')}
@@ -266,7 +284,7 @@ export default function Books() {
           <div className="flex gap-6 text-sm flex-wrap">
             <div>
               <span className="text-gray-500">Active Borrowings:</span>{' '}
-              <span className="font-bold text-gray-950">{borrowings.filter(b => b.status === 'active').length}</span>
+              <span className="font-bold text-gray-950">{borrowings.filter(b => b.status === 'active' || b.status === 'return_pending').length}</span>
             </div>
             <div>
               <span className="text-gray-500">Pending Requests:</span>{' '}
@@ -275,7 +293,7 @@ export default function Books() {
             <div>
               <span className="text-gray-500">Limit Capacity:</span>{' '}
               <span className="font-bold text-gray-950">
-                {borrowings.filter(b => b.status === 'active' || b.status === 'pending').length} / {Math.floor(creditScore / 20)}
+                {borrowings.filter(b => isOpenBorrowing(b.status)).length} / {Math.floor(creditScore / 20)}
               </span>
             </div>
           </div>
@@ -316,12 +334,12 @@ export default function Books() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {books.map((book) => {
               const alreadyBorrowed = borrowings.some(
-                b => b.book_id === book.id && (b.status === 'pending' || b.status === 'active')
+                b => b.book_id === book.id && isOpenBorrowing(b.status)
               )
               const maxBorrows = Math.floor(creditScore / 20)
-              const currentBorrowsCount = borrowings.filter(b => b.status === 'active' || b.status === 'pending').length
+              const currentBorrowsCount = borrowings.filter(b => isOpenBorrowing(b.status)).length
               const limitReached = currentBorrowsCount >= maxBorrows
-              const hasOverdue = borrowings.some(b => b.status === 'active' && new Date(b.due_date) < new Date())
+              const hasOverdue = borrowings.some(isOverdueBorrowing)
               const isSuspended = maxBorrows <= 0
 
               let buttonDisabled = !book.available || role === 'admin' || alreadyBorrowed || limitReached || hasOverdue || isSuspended
@@ -407,12 +425,12 @@ export default function Books() {
         if (!book) return null
         
         const alreadyBorrowed = borrowings.some(
-          b => b.book_id === book.id && (b.status === 'pending' || b.status === 'active')
+          b => b.book_id === book.id && isOpenBorrowing(b.status)
         )
         const maxBorrows = Math.floor(creditScore / 20)
-        const currentBorrowsCount = borrowings.filter(b => b.status === 'active' || b.status === 'pending').length
+        const currentBorrowsCount = borrowings.filter(b => isOpenBorrowing(b.status)).length
         const limitReached = currentBorrowsCount >= maxBorrows
-        const hasOverdue = borrowings.some(b => b.status === 'active' && new Date(b.due_date) < new Date())
+        const hasOverdue = borrowings.some(isOverdueBorrowing)
         const isSuspended = maxBorrows <= 0
 
         let buttonDisabled = !book.available || role === 'admin' || alreadyBorrowed || limitReached || hasOverdue || isSuspended

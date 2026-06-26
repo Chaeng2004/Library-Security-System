@@ -2,31 +2,19 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useIdleTimeout } from '../hooks/useIdleTimeout'
-import { getPendingBorrowings, getAllBorrowings, approveBorrowing, rejectBorrowing, returnBook, getBooks, addBook, updateBook, deleteBook, getAllUsers, getUserEmailsByIds, updateUserCreditScore } from '../lib/api'
+import { getPendingBorrowings, getPendingReturnBorrowings, getAllBorrowings, approveBorrowing, rejectBorrowing, confirmReturn, getBooks, addBook, updateBook, deleteBook, getAllUsers, getUserEmailsByIds, updateUserCreditScore } from '../lib/api'
 import { supabase } from '../lib/supabaseClient'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { TextInput } from '../components/ui/TextInput'
 
-const VALID_TABS = new Set(['pending', 'all', 'books', 'users'])
+const VALID_TABS = new Set(['pending', 'returns', 'all', 'books', 'users'])
 
 function formatDate(dateString) {
   if (!dateString) return 'N/A'
   return new Date(dateString).toLocaleDateString('en-US', {
     year: 'numeric', month: 'short', day: 'numeric'
   })
-}
-
-function formatSeconds(s) {
-  if (s >= 3600) {
-    const h = Math.floor(s / 3600)
-    const m = Math.floor((s % 3600) / 60)
-    const sec = s % 60
-    return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
-  }
-  const m = Math.floor(s / 60)
-  const sec = s % 60
-  return `${m}:${String(sec).padStart(2, '0')}`
 }
 
 const IDLE_MS = 15 * 60 * 60 * 1000
@@ -38,6 +26,7 @@ export default function AdminDashboard() {
   const { user, signOut } = useAuth()
 
   const [pendingBorrowings, setPendingBorrowings] = useState([])
+  const [pendingReturnBorrowings, setPendingReturnBorrowings] = useState([])
   const [allBorrowings, setAllBorrowings] = useState([])
   const [loading, setLoading] = useState(true)
   const [actionStatus, setActionStatus] = useState({})
@@ -64,8 +53,13 @@ export default function AdminDashboard() {
 
   const fetchData = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true)
-    const [pending, all] = await Promise.all([getPendingBorrowings(), getAllBorrowings()])
+    const [pending, returns, all] = await Promise.all([
+      getPendingBorrowings(),
+      getPendingReturnBorrowings(),
+      getAllBorrowings(),
+    ])
     setPendingBorrowings(pending.data || [])
+    setPendingReturnBorrowings(returns.data || [])
     setAllBorrowings(all.data || [])
     setLoading(false)
   }, [])
@@ -111,7 +105,7 @@ export default function AdminDashboard() {
     navigate('/login', { replace: true })
   }, [signOut, navigate])
 
-  const { secondsLeft, isWarning } = useIdleTimeout(handleTimeout, IDLE_MS, WARNING_MS)
+  const { secondsLeft } = useIdleTimeout(handleTimeout, IDLE_MS, WARNING_MS)
 
   useEffect(() => {
     sessionStorage.setItem('sessionIdleSecondsLeft', secondsLeft)
@@ -148,10 +142,10 @@ export default function AdminDashboard() {
         fetchData()
       }
     } else if (type === 'return') {
-      const { error } = await returnBook(borrowing.id, borrowing.book_id)
+      const { error } = await confirmReturn(borrowing.id, borrowing.book_id)
       if (error) {
         setActionStatus(prev => ({ ...prev, [borrowing.id]: 'error' }))
-        alert('Failed to mark as returned: ' + error.message)
+        alert('Failed to confirm return: ' + error.message)
       } else {
         fetchData()
       }
@@ -160,12 +154,12 @@ export default function AdminDashboard() {
 
   const confirmActionLabel = confirmAction?.type === 'approve' ? 'Approve'
     : confirmAction?.type === 'reject' ? 'Reject'
-    : 'Mark as Returned'
+    : 'Confirm Return'
   const confirmActionDesc = confirmAction?.type === 'approve'
     ? 'This will mark the borrowing as active and make the book unavailable.'
     : confirmAction?.type === 'reject'
     ? 'This will permanently delete the borrowing request.'
-    : 'This will mark the book as returned and make it available again.'
+    : 'Confirm the user has physically returned this book. Credit score will be updated and the book will become available again.'
 
   const handleBookFormSubmit = async () => {
     if (!bookForm.title.trim() || !bookForm.author.trim()) {
@@ -230,11 +224,18 @@ export default function AdminDashboard() {
     const map = {
       pending: 'bg-yellow-100 text-yellow-800',
       active: 'bg-green-100 text-green-800',
+      return_pending: 'bg-blue-100 text-blue-800',
       returned: 'bg-gray-100 text-gray-800',
+    }
+    const labels = {
+      pending: 'Pending',
+      active: 'Active',
+      return_pending: 'Return pending',
+      returned: 'Returned',
     }
     return (
       <span className={`px-2 py-1 rounded text-xs font-medium ${map[status] ?? 'bg-gray-100 text-gray-800'}`}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
+        {labels[status] ?? status}
       </span>
     )
   }
@@ -336,10 +337,14 @@ export default function AdminDashboard() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-8">
           <Card>
             <p className="text-xs text-gray-500">Pending Requests</p>
             <p className="text-3xl font-bold text-yellow-600 mt-1">{pendingBorrowings.length}</p>
+          </Card>
+          <Card>
+            <p className="text-xs text-gray-500">Return Requests</p>
+            <p className="text-3xl font-bold text-blue-600 mt-1">{pendingReturnBorrowings.length}</p>
           </Card>
           <Card>
             <p className="text-xs text-gray-500">Active Borrowings</p>
@@ -360,6 +365,12 @@ export default function AdminDashboard() {
             className={`px-4 py-2 text-sm font-medium rounded-md transition ${activeTab === 'pending' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}
           >
             Pending Requests ({pendingBorrowings.length})
+          </button>
+          <button
+            onClick={() => setTab('returns')}
+            className={`px-4 py-2 text-sm font-medium rounded-md transition ${activeTab === 'returns' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}
+          >
+            Return Requests ({pendingReturnBorrowings.length})
           </button>
           <button
             onClick={() => setTab('all')}
@@ -430,6 +441,43 @@ export default function AdminDashboard() {
           )
         )}
 
+        {!loading && activeTab === 'returns' && (
+          pendingReturnBorrowings.length === 0 ? (
+            <Card className="text-center py-12">
+              <p className="text-gray-500">No pending return requests</p>
+            </Card>
+          ) : (
+            <div className="grid gap-4">
+              {pendingReturnBorrowings.map((borrowing) => (
+                <Card key={borrowing.id} className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <h3 className="text-base font-semibold text-gray-900">
+                      {borrowing.books?.title || 'Unknown Book'}
+                    </h3>
+                    <p className="text-sm text-gray-600">{borrowing.books?.author || 'Unknown Author'}</p>
+                    <div className="mt-2 text-xs text-gray-500 space-y-1">
+                      <p>User: <span className="font-medium text-gray-700">{borrowing.user_email}</span></p>
+                      <p>Borrowed: {formatDate(borrowing.borrowed_date)}</p>
+                      <p>Due: {formatDate(borrowing.due_date)}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 shrink-0 items-center">
+                    {statusBadge(borrowing.status)}
+                    <Button
+                      onClick={() => setConfirmAction({ type: 'return', borrowing })}
+                      loading={actionStatus[borrowing.id] === 'loading'}
+                      variant="primary"
+                      className="text-sm"
+                    >
+                      Confirm Return
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )
+        )}
+
         {!loading && activeTab === 'all' && (
           <div className="grid gap-4">
             {allBorrowings.length === 0 ? (
@@ -453,13 +501,13 @@ export default function AdminDashboard() {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {statusBadge(borrowing.status)}
-                    {borrowing.status === 'active' && (
+                    {borrowing.status === 'return_pending' && (
                       <button
                         onClick={() => setConfirmAction({ type: 'return', borrowing })}
                         disabled={actionStatus[borrowing.id] === 'loading'}
                         className="px-3 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition disabled:opacity-50"
                       >
-                        Mark Returned
+                        Confirm Return
                       </button>
                     )}
                   </div>

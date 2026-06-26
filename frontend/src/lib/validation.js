@@ -60,6 +60,29 @@ export const resetPasswordSchema = z
     path: ['confirmPassword'],
   })
 
+/** Earliest selectable due date (tomorrow) as YYYY-MM-DD in local time. */
+export function getMinDueDateString() {
+  const d = new Date()
+  d.setDate(d.getDate() + 1)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+export function isDueDateAfterToday(dueDate) {
+  if (!dueDate) return false
+  const selected = new Date(`${dueDate}T00:00:00`)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return selected > today
+}
+
+export const dueDateSchema = z
+  .string()
+  .min(1, 'Due date is required')
+  .refine(isDueDateAfterToday, 'Due date must be after today')
+
 // [INPUT-VALIDATION] validate — runs a Zod schema and returns a flat { field: message }
 // error map so form fields can display per-field errors without extra parsing.
 export function validate(schema, data) {

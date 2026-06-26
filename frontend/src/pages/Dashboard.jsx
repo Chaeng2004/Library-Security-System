@@ -10,18 +10,6 @@ import { Button } from '../components/ui/Button'
 const IDLE_MS = 15 * 60 * 60 * 1000
 const WARNING_MS = 60 * 1000
 
-function formatSeconds(s) {
-  if (s >= 3600) {
-    const h = Math.floor(s / 3600)
-    const m = Math.floor((s % 3600) / 60)
-    const sec = s % 60
-    return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
-  }
-  const m = Math.floor(s / 60)
-  const sec = s % 60
-  return `${m}:${String(sec).padStart(2, '0')}`
-}
-
 function formatDate(ts) {
   return new Date(ts).toLocaleString()
 }
@@ -124,7 +112,7 @@ export default function Dashboard() {
     navigate('/login', { replace: true })
   }, [signOut, navigate])
 
-  const { secondsLeft, isWarning } = useIdleTimeout(handleTimeout, IDLE_MS, WARNING_MS)
+  const { secondsLeft } = useIdleTimeout(handleTimeout, IDLE_MS, WARNING_MS)
 
   useEffect(() => {
     sessionStorage.setItem('sessionIdleSecondsLeft', secondsLeft)
