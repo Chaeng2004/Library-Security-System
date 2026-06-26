@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useIdleTimeout } from '../hooks/useIdleTimeout'
-import { getPendingBorrowings, getPendingReturnBorrowings, getAllBorrowings, approveBorrowing, rejectBorrowing, confirmReturn, getBooks, addBook, updateBook, deleteBook, getAllUsers, getUserEmailsByIds, updateUserCreditScore } from '../lib/api'
+import { getPendingBorrowings, getPendingReturnBorrowings, getAllBorrowings, approveBorrowing, rejectBorrowing, confirmReturn, getBooks, addBook, updateBook, deleteBook, getAllUsers, getUserEmailsByIds, getBorrowingCountsByUserIds, updateUserCreditScore } from '../lib/api'
+import { getCreditTier, getBorrowLimit, formatProfileName } from '../lib/credit'
 import { supabase } from '../lib/supabaseClient'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
@@ -75,11 +76,16 @@ export default function AdminDashboard() {
     if (showLoading) setUsersLoading(true)
     const { data } = await getAllUsers()
     const profiles = data || []
-    const { data: emailMap } = await getUserEmailsByIds(profiles.map((u) => u.id))
+    const userIds = profiles.map((u) => u.id)
+    const [{ data: emailMap }, { data: borrowCounts }] = await Promise.all([
+      getUserEmailsByIds(userIds),
+      getBorrowingCountsByUserIds(userIds),
+    ])
     setUsersList(
       profiles.map((u) => ({
         ...u,
-        email: u.email || emailMap?.[u.id] || null,
+        email: emailMap?.[u.id] || null,
+        borrowStats: borrowCounts?.[u.id] ?? { active: 0, return_pending: 0, pending: 0, total: 0 },
       }))
     )
     setUsersLoading(false)
@@ -655,9 +661,12 @@ export default function AdminDashboard() {
         {!loading && activeTab === 'users' && (
           <div>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-semibold text-gray-900">Registered Users ({usersList.length})</h2>
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">Users & Credit ({usersList.length})</h2>
+                <p className="text-xs text-gray-500 mt-0.5">Profiles, borrowing activity, and credit tiers</p>
+              </div>
             </div>
-            
+
             {usersLoading ? (
               <div className="flex justify-center items-center h-32">
                 <div className="animate-spin h-8 w-8 border-4 border-gray-200 border-t-gray-900 rounded-full" />
@@ -667,41 +676,88 @@ export default function AdminDashboard() {
                 <p className="text-gray-500">No users found.</p>
               </Card>
             ) : (
-              <div className="grid gap-3">
-                {usersList.map(usr => (
-                  <Card key={usr.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-gray-900 truncate">
-                          {usr.first_name || usr.last_name ? `${usr.first_name} ${usr.last_name}` : 'No Profile Name'}
-                        </span>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                          usr.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'
-                        }`}>
-                          {usr.role}
-                        </span>
+              <div className="space-y-3">
+                <div className="hidden md:grid md:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-4 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                  <span>User</span>
+                  <span>Contact</span>
+                  <span>Borrowings</span>
+                  <span>Credit</span>
+                  <span className="text-right">Actions</span>
+                </div>
+                {usersList.map((usr) => {
+                  const displayName = formatProfileName(usr)
+                  const score = usr.credit_score ?? 100
+                  const tier = getCreditTier(score)
+                  const stats = usr.borrowStats ?? { active: 0, return_pending: 0, pending: 0, total: 0 }
+                  const openLoans = stats.active + stats.return_pending + stats.pending
+
+                  return (
+                    <Card key={usr.id} className="p-4">
+                      <div className="grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-center">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-semibold text-gray-900 truncate">
+                              {displayName || usr.email || `User ${usr.id.slice(0, 8)}…`}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold capitalize ${
+                              usr.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {usr.role || 'user'}
+                            </span>
+                          </div>
+                          {displayName && usr.email && (
+                            <p className="text-xs text-gray-500 mt-0.5 truncate">{usr.email}</p>
+                          )}
+                          <p className="text-xs text-gray-400 mt-1">
+                            Library ID: {usr.library_id?.trim() ? usr.library_id : 'Not set'}
+                            {usr.created_at && (
+                              <> · Joined {formatDate(usr.created_at)}</>
+                            )}
+                          </p>
+                        </div>
+
+                        <div className="text-xs text-gray-600 space-y-0.5">
+                          <p>
+                            <span className="text-gray-400">Email: </span>
+                            {usr.email || <span className="text-gray-400 italic">Unknown</span>}
+                          </p>
+                          {usr.phone?.trim() && (
+                            <p><span className="text-gray-400">Phone: </span>{usr.phone}</p>
+                          )}
+                        </div>
+
+                        <div className="text-xs text-gray-600 space-y-0.5">
+                          <p><span className="text-gray-400">Active: </span><span className="font-medium text-gray-900">{stats.active}</span></p>
+                          <p><span className="text-gray-400">Pending: </span>{stats.pending + stats.return_pending}</p>
+                          <p><span className="text-gray-400">Total: </span>{stats.total}</p>
+                          <p><span className="text-gray-400">Limit: </span>{getBorrowLimit(score)} books ({openLoans} open)</p>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg font-bold text-gray-900">{score}</span>
+                            <span className="text-xs text-gray-400">/ 200</span>
+                          </div>
+                          <span className={`inline-block mt-1 px-2 py-0.5 text-[10px] font-semibold rounded-full border ${tier.color}`}>
+                            {tier.name}
+                          </span>
+                        </div>
+
+                        <div className="flex md:justify-end">
+                          <button
+                            onClick={() => {
+                              setEditingUser(usr)
+                              setCreditFormScore(score)
+                            }}
+                            className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition"
+                          >
+                            Adjust Credit
+                          </button>
+                        </div>
                       </div>
-                      <p className="text-xs text-gray-500 mt-0.5">Email: {usr.email || 'Unavailable'}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">Library ID: {usr.library_id || 'N/A'}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">User ID: {usr.id}</p>
-                    </div>
-                    <div className="flex items-center gap-6 shrink-0">
-                      <div className="text-right">
-                        <span className="text-xs text-gray-500 block">Credit Score</span>
-                        <span className="text-sm font-bold text-gray-900 block mt-0.5">{usr.credit_score ?? 100} / 200</span>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setEditingUser(usr)
-                          setCreditFormScore(usr.credit_score ?? 100)
-                        }}
-                        className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition"
-                      >
-                        Adjust Credit
-                      </button>
-                    </div>
-                  </Card>
-                ))}
+                    </Card>
+                  )
+                })}
               </div>
             )}
           </div>
@@ -714,7 +770,17 @@ export default function AdminDashboard() {
           <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
             <h2 className="text-base font-bold text-gray-900">Adjust Credit Score</h2>
             <p className="mt-2 text-xs text-gray-500">
-              User: <span className="font-semibold text-gray-700">{editingUser.first_name || editingUser.last_name ? `${editingUser.first_name} ${editingUser.last_name}` : editingUser.id}</span>
+              {formatProfileName(editingUser) || editingUser.email || `User ${editingUser.id.slice(0, 8)}…`}
+            </p>
+            {editingUser.email && formatProfileName(editingUser) && (
+              <p className="text-xs text-gray-400">{editingUser.email}</p>
+            )}
+            <p className="mt-1 text-xs">
+              Current: <span className="font-semibold text-gray-700">{editingUser.credit_score ?? 100}</span>
+              {' · '}
+              <span className={`px-1.5 py-0.5 rounded-full border text-[10px] font-semibold ${getCreditTier(editingUser.credit_score ?? 100).color}`}>
+                {getCreditTier(editingUser.credit_score ?? 100).name}
+              </span>
             </p>
             
             <div className="my-5">

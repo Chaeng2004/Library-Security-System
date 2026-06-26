@@ -73,6 +73,15 @@ export async function requestReturn(borrowingId) {
   return { data, error }
 }
 
+/** User-facing message when return request fails (e.g. missing DB migration). */
+export function formatReturnRequestError(error) {
+  const msg = error?.message ?? 'Unknown error'
+  if (msg.includes('borrowings_status_check')) {
+    return 'Return requests are not enabled on the server yet. Please ask an administrator to update the library database.'
+  }
+  return msg
+}
+
 /** Admin confirms a user return request; credit trigger fires on return_pending → returned. */
 export async function confirmReturn(borrowingId, bookId) {
   const { data, error } = await supabase
@@ -209,22 +218,63 @@ export async function getAllUsers() {
 export async function getUserEmailsByIds(userIds = []) {
   if (!userIds.length) return { data: {}, error: null }
 
-  const { data, error } = await supabase
-    .from('audit_logs')
-    .select('user_id, user_email, created_at')
-    .in('user_id', userIds)
-    .not('user_email', 'is', null)
-    .order('created_at', { ascending: false })
-
-  if (error) return { data: {}, error }
-
   const emailByUserId = {}
-  for (const row of data ?? []) {
-    if (!row.user_id || emailByUserId[row.user_id]) continue
-    emailByUserId[row.user_id] = row.user_email
+
+  const [auditRes, borrowingRes] = await Promise.all([
+    supabase
+      .from('audit_logs')
+      .select('user_id, user_email, created_at')
+      .in('user_id', userIds)
+      .not('user_email', 'is', null)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('borrowings_with_email')
+      .select('user_id, user_email')
+      .in('user_id', userIds)
+      .not('user_email', 'is', null),
+  ])
+
+  if (auditRes.error && borrowingRes.error) {
+    return { data: {}, error: auditRes.error }
+  }
+
+  for (const row of borrowingRes.data ?? []) {
+    if (row.user_id && row.user_email && !emailByUserId[row.user_id]) {
+      emailByUserId[row.user_id] = row.user_email
+    }
+  }
+  for (const row of auditRes.data ?? []) {
+    if (row.user_id && row.user_email && !emailByUserId[row.user_id]) {
+      emailByUserId[row.user_id] = row.user_email
+    }
   }
 
   return { data: emailByUserId, error: null }
+}
+
+export async function getBorrowingCountsByUserIds(userIds = []) {
+  if (!userIds.length) return { data: {}, error: null }
+
+  const { data, error } = await supabase
+    .from('borrowings')
+    .select('user_id, status')
+    .in('user_id', userIds)
+
+  if (error) return { data: {}, error }
+
+  const counts = {}
+  for (const row of data ?? []) {
+    if (!row.user_id) continue
+    if (!counts[row.user_id]) {
+      counts[row.user_id] = { active: 0, return_pending: 0, pending: 0, total: 0 }
+    }
+    counts[row.user_id].total++
+    if (row.status === 'active') counts[row.user_id].active++
+    else if (row.status === 'return_pending') counts[row.user_id].return_pending++
+    else if (row.status === 'pending') counts[row.user_id].pending++
+  }
+
+  return { data: counts, error: null }
 }
 
 // Dashboard stats

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { getUserBorrowings, requestReturn } from '../lib/api'
+import { getUserBorrowings, requestReturn, formatReturnRequestError } from '../lib/api'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 
@@ -39,7 +39,7 @@ export default function MyBorrowings() {
     
     if (error) {
       setReturnStatus(prev => ({ ...prev, [borrowingId]: 'error' }))
-      alert('Failed to request return: ' + error.message)
+      alert('Failed to request return: ' + formatReturnRequestError(error))
     } else {
       setReturnStatus(prev => ({ ...prev, [borrowingId]: 'success' }))
       fetchBorrowings()

@@ -1,4 +1,5 @@
--- Run this in the Supabase SQL editor (Project > SQL Editor)
+-- Run migrations in Supabase SQL Editor (Project > SQL Editor).
+-- REQUIRED for return-request flow: run section 6 before users can request returns.
 
 -- 1. Add role column and credit_score column to user_profiles if missing
 ALTER TABLE public.user_profiles
@@ -29,7 +30,7 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- 4. Trigger to adjust user credit score on book return
+-- 4. Trigger to adjust user credit score when admin confirms return (return_pending → returned)
 CREATE OR REPLACE FUNCTION public.handle_borrowing_return()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE
@@ -63,7 +64,7 @@ BEGIN
     SET credit_score = GREATEST(0, LEAST(200, COALESCE(credit_score, 100) + v_credit_change))
     WHERE id = NEW.user_id;
   END IF;
-  
+
   RETURN NEW;
 END;
 $$;
@@ -81,8 +82,8 @@ DECLARE
   r RECORD;
   v_now TIMESTAMPTZ := NOW();
 BEGIN
-  FOR r IN 
-    SELECT id, user_id FROM public.borrowings 
+  FOR r IN
+    SELECT id, user_id FROM public.borrowings
     WHERE status IN ('active', 'return_pending') AND due_date < v_now AND overdue_penalized = FALSE
   LOOP
     -- Ensure profile exists before applying overdue penalty.
@@ -102,16 +103,17 @@ BEGIN
 END;
 $$;
 
--- 6. Allow return_pending status on borrowings (run if status is constrained)
--- ALTER TABLE public.borrowings DROP CONSTRAINT IF EXISTS borrowings_status_check;
--- ALTER TABLE public.borrowings ADD CONSTRAINT borrowings_status_check
---   CHECK (status IN ('pending', 'active', 'return_pending', 'returned'));
+-- 6. REQUIRED: allow return_pending status (fixes "borrowings_status_check" on return request)
+ALTER TABLE public.borrowings DROP CONSTRAINT IF EXISTS borrowings_status_check;
+ALTER TABLE public.borrowings ADD CONSTRAINT borrowings_status_check
+  CHECK (status IN ('pending', 'active', 'return_pending', 'returned'));
 
 -- 7. Promote a user to admin (replace the email before running)
 -- UPDATE public.user_profiles
 --   SET role = 'admin'
 --   WHERE id = (SELECT id FROM auth.users WHERE email = 'YOUR_ADMIN_EMAIL_HERE');
 
--- 8. Verify credit-score automation is deployed (run after sections 4–5)
+-- 8. Verify deployment (optional)
 -- SELECT tgname FROM pg_trigger WHERE tgname = 'trg_handle_borrowing_return';
 -- SELECT proname FROM pg_proc WHERE proname IN ('handle_borrowing_return', 'penalize_overdue_borrowings');
+-- SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'borrowings_status_check';
