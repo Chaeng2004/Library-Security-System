@@ -151,7 +151,8 @@ export default function Books() {
   const selectedBook = books.find(b => b.id === selectedBookId)
 
   return (
-    <AppShell title="Browse Books" badges={{ borrowings: openBorrowCount }} maxWidth="max-w-6xl">
+    <AppShell title="Browse Books" badges={{ borrowings: openBorrowCount }}>
+      <div className="flex flex-col gap-6">
       {/* Date Picker Modal */}
       {selectedBookId && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -204,15 +205,16 @@ export default function Books() {
           </div>
         </div>
       )}
-        <CreditScoreCard
-          score={creditScore}
-          openLoans={openLoanCount}
-          compact
-          className="mb-6"
-        />
+        <Card>
+          <CreditScoreCard
+            score={creditScore}
+            openLoans={openLoanCount}
+            compact
+          />
+        </Card>
 
         {/* Search and Filter */}
-        <div className="mb-8 flex flex-col sm:flex-row gap-3">
+        <div className="flex flex-col sm:flex-row gap-3">
           <div className="flex-1">
             <TextInput
               placeholder="Search books by title or author..."
@@ -235,7 +237,7 @@ export default function Books() {
 
         {/* Books Grid */}
         {loading ? (
-          <LoadingSpinner />
+          <LoadingSpinner label="Loading books…" />
         ) : books.length === 0 ? (
           <Card>
             <EmptyState title="No books found" description="Try adjusting your search or filters." />
@@ -426,6 +428,7 @@ export default function Books() {
           </div>
         )
       })()}
+      </div>
     </AppShell>
   )
 }

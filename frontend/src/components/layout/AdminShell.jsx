@@ -3,13 +3,15 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { Button } from '../ui/Button'
 import { ConfirmModal } from '../ui/ConfirmModal'
+import { LibraryLogo } from './LibraryLogo'
+import { SHELL_MAX_WIDTH, shellNavButtonClass } from './shellConstants'
 
 const ADMIN_NAV = [
   { path: '/admin', label: 'Admin Dashboard' },
   { path: '/profile', label: 'Profile' },
 ]
 
-export function AdminShell({ title = 'Admin Dashboard', subtitle, children }) {
+export function AdminShell({ title = 'Admin Dashboard', subtitle, children, maxWidth = SHELL_MAX_WIDTH }) {
   const navigate = useNavigate()
   const location = useLocation()
   const { user, signOut } = useAuth()
@@ -21,7 +23,7 @@ export function AdminShell({ title = 'Admin Dashboard', subtitle, children }) {
     navigate('/login', { replace: true })
   }
 
-  const isActive = (path) => location.pathname === path || location.pathname.startsWith(`${path}?`)
+  const isActive = (path) => location.pathname === path
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -35,18 +37,21 @@ export function AdminShell({ title = 'Admin Dashboard', subtitle, children }) {
       />
 
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <p className="font-semibold text-gray-900">Library Security System</p>
-            <p className="text-xs text-gray-500 truncate">
-              {title}{subtitle ? ` · ${subtitle}` : ''}
-            </p>
+        <div className={`${maxWidth} mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4`}>
+          <div className="flex items-center gap-3 min-w-0">
+            <LibraryLogo />
+            <div className="min-w-0">
+              <p className="font-semibold text-gray-900 truncate">Library Security System</p>
+              <p className="text-xs text-gray-500 truncate">
+                {title}{subtitle ? ` · ${subtitle}` : ''}
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-3 shrink-0">
             <span className="hidden sm:inline-flex px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-purple-100 text-purple-800 rounded">
               Admin
             </span>
-            <p className="text-sm text-gray-600 hidden md:block truncate max-w-[200px]" title={user?.email}>
+            <p className="text-sm text-gray-600 hidden sm:block truncate max-w-[180px]" title={user?.email}>
               {user?.email}
             </p>
             <Button variant="secondary" onClick={() => setShowLogoutConfirm(true)} className="text-xs sm:text-sm">
@@ -57,17 +62,13 @@ export function AdminShell({ title = 'Admin Dashboard', subtitle, children }) {
       </header>
 
       <nav className="bg-white border-b border-gray-200">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-2 flex gap-1">
+        <div className={`${maxWidth} mx-auto px-4 sm:px-6 py-2 flex gap-1 overflow-x-auto`}>
           {ADMIN_NAV.map(({ path, label }) => (
             <button
               key={path}
               type="button"
               onClick={() => navigate(path)}
-              className={`px-3 py-2 text-sm font-medium rounded-md transition ${
-                isActive(path)
-                  ? 'bg-gray-900 text-white'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-              }`}
+              className={shellNavButtonClass(isActive(path))}
             >
               {label}
             </button>
@@ -75,7 +76,7 @@ export function AdminShell({ title = 'Admin Dashboard', subtitle, children }) {
         </div>
       </nav>
 
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8">
+      <main className={`flex-1 ${maxWidth} w-full mx-auto px-4 sm:px-6 py-6 sm:py-8`}>
         {children}
       </main>
     </div>

@@ -234,30 +234,30 @@ export default function AdminDashboard() {
         confirmVariant={confirmAction?.type === 'reject' ? 'danger' : 'primary'}
         loading={confirmAction && actionStatus[confirmAction.borrowing?.id] === 'loading'}
       />
-        {/* Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-8">
+
+      <div className="flex flex-col gap-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <Card>
             <p className="text-xs text-gray-500">Pending Requests</p>
-            <p className="text-3xl font-bold text-yellow-600 mt-1">{pendingBorrowings.length}</p>
+            <p className="text-3xl font-bold text-yellow-600 mt-1">{loading ? '…' : pendingBorrowings.length}</p>
           </Card>
           <Card>
             <p className="text-xs text-gray-500">Return Requests</p>
-            <p className="text-3xl font-bold text-blue-600 mt-1">{pendingReturnBorrowings.length}</p>
+            <p className="text-3xl font-bold text-blue-600 mt-1">{loading ? '…' : pendingReturnBorrowings.length}</p>
           </Card>
           <Card>
             <p className="text-xs text-gray-500">Active Borrowings</p>
             <p className="text-3xl font-bold text-green-600 mt-1">
-              {allBorrowings.filter(b => b.status === 'active').length}
+              {loading ? '…' : allBorrowings.filter(b => b.status === 'active').length}
             </p>
           </Card>
           <Card>
             <p className="text-xs text-gray-500">Total Borrowings</p>
-            <p className="text-3xl font-bold text-gray-900 mt-1">{allBorrowings.length}</p>
+            <p className="text-3xl font-bold text-gray-900 mt-1">{loading ? '…' : allBorrowings.length}</p>
           </Card>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-2 mb-6 flex-wrap">
+        <div className="flex gap-2 flex-wrap">
           <button
             onClick={() => setTab('pending')}
             className={`px-4 py-2 text-sm font-medium rounded-md transition ${activeTab === 'pending' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}
@@ -290,7 +290,10 @@ export default function AdminDashboard() {
           </button>
         </div>
 
-        {loading && <LoadingSpinner />}
+        <div className="min-h-[200px]">
+        {loading && (activeTab === 'pending' || activeTab === 'returns' || activeTab === 'all') && (
+          <LoadingSpinner label="Loading borrowings…" />
+        )}
 
         {!loading && activeTab === 'pending' && (
           pendingBorrowings.length === 0 ? (
@@ -298,7 +301,7 @@ export default function AdminDashboard() {
           ) : (
             <div className="grid gap-4">
               {pendingBorrowings.map((borrowing) => (
-                <Card key={borrowing.id} className="flex items-start justify-between gap-4">
+                <Card key={borrowing.id} className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                   <div className="flex-1">
                     <h3 className="text-base font-semibold text-gray-900">
                       {borrowing.books?.title || 'Unknown Book'}
@@ -310,7 +313,7 @@ export default function AdminDashboard() {
                       <p>Due: {formatDate(borrowing.due_date)}</p>
                     </div>
                   </div>
-                  <div className="flex gap-2 shrink-0">
+                  <div className="flex gap-2 shrink-0 flex-wrap">
                     <Button
                       onClick={() => handleApprove(borrowing)}
                       loading={actionStatus[borrowing.id] === 'loading'}
@@ -339,7 +342,7 @@ export default function AdminDashboard() {
           ) : (
             <div className="grid gap-4">
               {pendingReturnBorrowings.map((borrowing) => (
-                <Card key={borrowing.id} className="flex items-start justify-between gap-4">
+                <Card key={borrowing.id} className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                   <div className="flex-1">
                     <h3 className="text-base font-semibold text-gray-900">
                       {borrowing.books?.title || 'Unknown Book'}
@@ -351,7 +354,7 @@ export default function AdminDashboard() {
                       <p>Due: {formatDate(borrowing.due_date)}</p>
                     </div>
                   </div>
-                  <div className="flex gap-2 shrink-0 items-center">
+                  <div className="flex gap-2 shrink-0 items-center flex-wrap">
                     {statusBadge(borrowing.status)}
                     <Button
                       onClick={() => setConfirmAction({ type: 'return', borrowing })}
@@ -374,7 +377,7 @@ export default function AdminDashboard() {
               <Card><EmptyState title="No borrowings yet" /></Card>
             ) : (
               allBorrowings.map((borrowing) => (
-                <Card key={borrowing.id} className="flex items-start justify-between gap-4">
+                <Card key={borrowing.id} className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                   <div className="flex-1">
                     <h3 className="text-base font-semibold text-gray-900">
                       {borrowing.books?.title || 'Unknown Book'}
@@ -387,7 +390,7 @@ export default function AdminDashboard() {
                       {borrowing.returned_date && <p>Returned: {formatDate(borrowing.returned_date)}</p>}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap">
                     {statusBadge(borrowing.status)}
                     {borrowing.status === 'return_pending' && (
                       <button
@@ -499,13 +502,13 @@ export default function AdminDashboard() {
             )}
 
             {booksLoading ? (
-              <LoadingSpinner className="h-8 w-8" label="" />
+              <LoadingSpinner label="Loading books…" />
             ) : books.length === 0 ? (
               <Card><EmptyState title="No books in the library" description="Add your first book to get started." /></Card>
             ) : (
               <div className="grid gap-3">
                 {books.map(book => (
-                  <Card key={book.id} className="flex items-center justify-between gap-4">
+                  <Card key={book.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-gray-900 truncate">{book.title}</p>
                       <p className="text-xs text-gray-500">{book.author} {book.isbn ? `— ${book.isbn}` : ''}</p>
@@ -546,12 +549,12 @@ export default function AdminDashboard() {
             </div>
 
             {usersLoading ? (
-              <LoadingSpinner className="h-8 w-8" label="" />
+              <LoadingSpinner label="Loading users…" />
             ) : usersList.length === 0 ? (
               <Card><EmptyState title="No users found" description="Registered users will appear here after section 7 SQL is applied." /></Card>
             ) : (
-              <div className="space-y-3">
-                <div className="hidden md:grid md:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-4 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+              <div className="space-y-3 overflow-x-auto">
+                <div className="hidden md:grid md:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-4 px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[640px]">
                   <span>User</span>
                   <span>Contact</span>
                   <span>Borrowings</span>
@@ -568,8 +571,8 @@ export default function AdminDashboard() {
                   const primaryLabel = displayName || email || `User ${usr.id.slice(0, 8)}…`
 
                   return (
-                    <Card key={usr.id} className="p-4">
-                      <div className="grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-center">
+                    <Card key={usr.id}>
+                      <div className="grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-center min-w-0 md:min-w-[640px]">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-sm font-semibold text-gray-900 truncate">
@@ -645,6 +648,9 @@ export default function AdminDashboard() {
             )}
           </div>
         )}
+        </div>
+      </div>
+
       {editingUser && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
-import { getUserProfile, updateUserProfile } from '../lib/api'
+import { getUserProfile, updateUserProfile, getUserBorrowings } from '../lib/api'
 import { logEvent, AUDIT_EVENTS } from '../lib/audit'
 import { validate, mfaVerifySchema } from '../lib/validation'
 import { getBorrowLimit } from '../lib/credit'
@@ -26,6 +26,7 @@ export default function UserProfile() {
   })
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
+  const [openLoanCount, setOpenLoanCount] = useState(0)
   const [message, setMessage] = useState('')
 
   // MFA state
@@ -47,7 +48,10 @@ export default function UserProfile() {
 
   const fetchProfile = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true)
-    const { data } = await getUserProfile(user.id)
+    const [{ data }, borrowingsRes] = await Promise.all([
+      getUserProfile(user.id),
+      getUserBorrowings(user.id),
+    ])
     if (data) {
       setProfile({
         first_name: data.first_name || '',
@@ -58,6 +62,8 @@ export default function UserProfile() {
         credit_score: data.credit_score ?? 100
       })
     }
+    const openStatuses = ['pending', 'active', 'return_pending']
+    setOpenLoanCount((borrowingsRes.data ?? []).filter((b) => openStatuses.includes(b.status)).length)
     setLoading(false)
   }, [user.id])
 
@@ -132,11 +138,10 @@ export default function UserProfile() {
   }
 
   return (
-    <AppShell title="Profile" navVariant={role === 'admin' ? 'admin' : 'user'} maxWidth="max-w-3xl">
-      <div className="max-w-2xl mx-auto flex flex-col gap-6">
-          {/* Account Information */}
-          <Card className="mb-8">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">Account Information</h2>
+    <AppShell title="Profile" navVariant={role === 'admin' ? 'admin' : 'user'}>
+      <div className="flex flex-col gap-6">
+          <Card>
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Account Information</h2>
             <div className="space-y-2">
               <div>
                 <label className="text-sm font-medium text-gray-700">Email</label>
@@ -149,17 +154,15 @@ export default function UserProfile() {
             </div>
           </Card>
 
-          {/* Library Standing / Credit Score */}
-          <Card className="mb-0">
-            <CreditScoreCard score={profile.credit_score ?? 100} openLoans={0} />
-            <p className="text-xs text-gray-500 mt-3">
+          <Card className="border-l-4 border-l-gray-900">
+            <CreditScoreCard score={profile.credit_score ?? 100} openLoans={openLoanCount} />
+            <p className="text-xs text-gray-500 mt-3 pt-3 border-t border-gray-100">
               Max concurrent borrows: {getBorrowLimit(profile.credit_score ?? 100)} books
             </p>
           </Card>
 
-          {/* Two-Factor Authentication */}
-          <Card className="mb-8">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">Two-Factor Authentication</h2>
+          <Card>
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Two-Factor Authentication</h2>
             {mfaLoading ? (
               <p className="text-sm text-gray-500">Loading…</p>
             ) : mfaFactor ? (
@@ -226,12 +229,11 @@ export default function UserProfile() {
             )}
           </Card>
 
-          {/* Profile Information */}
           {loading ? (
-            <LoadingSpinner />
+            <LoadingSpinner label="Loading profile…" />
           ) : (
             <Card>
-              <h2 className="text-xl font-bold text-gray-900 mb-6">Personal Information</h2>
+              <h2 className="text-lg font-semibold text-gray-900 mb-6">Personal Information</h2>
               
               {message && (
                 <div className={`mb-4 p-3 rounded-md text-sm ${

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import { useIdleTimeout } from '../hooks/useIdleTimeout'
-import { getUserActiveBorrowings, getUserPendingBorrowings, getUserRecentBorrowings, getUserProfile } from '../lib/api'
+import { getUserActiveBorrowings, getUserPendingBorrowings, getUserRecentBorrowings, getUserProfile, getUserBorrowings } from '../lib/api'
 import { getBorrowLimit } from '../lib/credit'
 import { formatDateTime } from '../lib/format'
 import { AppShell } from '../components/layout/AppShell'
@@ -31,6 +31,18 @@ const EVENT_LABELS = {
   PASSWORD_RESET_SUCCESS: 'Password reset',
 }
 
+function formatSeconds(s) {
+  if (s >= 3600) {
+    const h = Math.floor(s / 3600)
+    const m = Math.floor((s % 3600) / 60)
+    const sec = s % 60
+    return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+  }
+  const m = Math.floor(s / 60)
+  const sec = s % 60
+  return `${m}:${String(sec).padStart(2, '0')}`
+}
+
 function SectionTitle({ title, description }) {
   return (
     <div className="mb-4">
@@ -48,6 +60,7 @@ export default function Dashboard() {
   const [logsLoading, setLogsLoading] = useState(true)
   const [activeBorrowings, setActiveBorrowings] = useState([])
   const [pendingBorrowings, setPendingBorrowings] = useState([])
+  const [returnPendingBorrowings, setReturnPendingBorrowings] = useState([])
   const [recentBorrowings, setRecentBorrowings] = useState([])
   const [statsLoading, setStatsLoading] = useState(true)
   const [creditScore, setCreditScore] = useState(100)
@@ -66,15 +79,17 @@ export default function Dashboard() {
   const fetchStats = useCallback(async () => {
     if (!user?.id) return
     setStatsLoading(true)
-    const [active, pending, recent, profile] = await Promise.all([
+    const [active, pending, recent, profile, allBorrowings] = await Promise.all([
       getUserActiveBorrowings(user.id),
       getUserPendingBorrowings(user.id),
       getUserRecentBorrowings(user.id, 3),
       getUserProfile(user.id),
+      getUserBorrowings(user.id),
     ])
     setActiveBorrowings(active.data ?? [])
     setPendingBorrowings(pending.data ?? [])
     setRecentBorrowings(recent.data ?? [])
+    setReturnPendingBorrowings((allBorrowings.data ?? []).filter((b) => b.status === 'return_pending'))
     if (profile.data) setCreditScore(profile.data.credit_score ?? 100)
     setStatsLoading(false)
   }, [user])
@@ -92,7 +107,7 @@ export default function Dashboard() {
     navigate('/login', { replace: true })
   }, [signOut, navigate])
 
-  const { secondsLeft } = useIdleTimeout(handleTimeout, IDLE_MS, WARNING_MS)
+  const { secondsLeft, isWarning } = useIdleTimeout(handleTimeout, IDLE_MS, WARNING_MS)
 
   useEffect(() => {
     sessionStorage.setItem('sessionIdleSecondsLeft', secondsLeft)
@@ -104,7 +119,8 @@ export default function Dashboard() {
 
   if (role === null || role === 'admin') return null
 
-  const openLoans = activeBorrowings.length + pendingBorrowings.length
+  const openLoans = activeBorrowings.length + pendingBorrowings.length + returnPendingBorrowings.length
+  const navBadgeCount = activeBorrowings.length + returnPendingBorrowings.length
   const overdueCount = activeBorrowings.filter((b) => new Date(b.due_date) < new Date()).length
   const mfaLabel = aal === 'aal2' ? 'MFA verified (AAL2)' : nextAal === 'aal2' ? 'MFA required' : 'Password only (AAL1)'
   const idleMinutes = Math.round(IDLE_MS / 60000)
@@ -112,15 +128,21 @@ export default function Dashboard() {
   return (
     <AppShell
       title="Dashboard"
-      badges={{ borrowings: activeBorrowings.length }}
+      badges={{ borrowings: navBadgeCount }}
     >
       <div className="flex flex-col gap-6">
-        <Card>
-          <CreditScoreCard
-            score={creditScore}
-            openLoans={openLoans}
-            className=""
-          />
+        <Card className="border-l-4 border-l-gray-900">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4 pb-4 border-b border-gray-100">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">User dashboard</h2>
+              <p className="text-sm text-gray-500 mt-0.5">{user?.email}</p>
+            </div>
+            <p className="text-xs text-gray-400">
+              Session idle: {formatSeconds(secondsLeft)}
+              {isWarning && <span className="ml-2 text-amber-600 font-medium">· expiring soon</span>}
+            </p>
+          </div>
+          <CreditScoreCard score={creditScore} openLoans={openLoans} />
         </Card>
 
         {!statsLoading && overdueCount > 0 && (
@@ -213,8 +235,54 @@ export default function Dashboard() {
                 />
               </Card>
             )}
+
+            {recentBorrowings.length > 0 && (
+              <Card>
+                <SectionTitle title="Recently returned" description="Your last 3 returned books" />
+                <div className="divide-y divide-gray-100">
+                  {recentBorrowings.map((b) => (
+                    <div key={b.id} className="py-3 flex items-center justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{b.books?.title ?? '—'}</p>
+                        <p className="text-xs text-gray-500">{b.books?.author ?? ''}</p>
+                      </div>
+                      <p className="text-xs text-gray-500 shrink-0">
+                        {b.returned_date ? formatDateTime(b.returned_date) : '—'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
           </>
         )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <button
+            type="button"
+            onClick={() => navigate('/books')}
+            className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 text-left hover:shadow-md transition-shadow"
+          >
+            <p className="text-sm font-semibold text-gray-900">Browse Books</p>
+            <p className="text-xs text-gray-500 mt-1">Discover and borrow books</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/my-borrowings')}
+            className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 text-left hover:shadow-md transition-shadow"
+          >
+            <p className="text-sm font-semibold text-gray-900">My Borrowings</p>
+            <p className="text-xs text-gray-500 mt-1">{openLoans} open loan{openLoans !== 1 ? 's' : ''}</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/profile')}
+            className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 text-left hover:shadow-md transition-shadow"
+          >
+            <p className="text-sm font-semibold text-gray-900">Profile</p>
+            <p className="text-xs text-gray-500 mt-1">Manage your account</p>
+          </button>
+        </div>
 
         <Card>
           <SectionTitle title="Account & security" description="Live session details from Supabase Auth" />
@@ -222,7 +290,7 @@ export default function Dashboard() {
             <StatCard label="Role" value={role ?? 'user'} helper="From user_profiles" />
             <StatCard label="Authentication" value={mfaLabel} />
             <StatCard label="Borrow limit" value={`${getBorrowLimit(creditScore)} books`} helper={`Score: ${creditScore}`} />
-            <StatCard label="Idle timeout" value={`${idleMinutes} min`} helper="Auto sign-out" />
+            <StatCard label="Idle timeout" value={formatSeconds(secondsLeft)} helper={`${idleMinutes} min max · auto sign-out`} />
           </div>
         </Card>
 

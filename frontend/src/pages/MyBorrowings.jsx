@@ -31,7 +31,7 @@ function BorrowingCard({ borrowing, action }) {
 
 function Section({ title, count, children, emptyTitle, emptyDescription }) {
   return (
-    <section className="mb-10">
+    <section>
       <h2 className="text-lg font-semibold text-gray-900 mb-4">
         {title}
         {count != null && <span className="ml-2 text-sm font-normal text-gray-500">({count})</span>}
@@ -85,8 +85,9 @@ export default function MyBorrowings() {
 
   return (
     <AppShell title="My Borrowings" badges={{ borrowings: openCount }}>
+      <div className="flex flex-col gap-6 min-h-[200px]">
       {loading ? (
-        <LoadingSpinner />
+        <LoadingSpinner label="Loading borrowings…" />
       ) : (
         <>
           <Section
@@ -164,6 +165,7 @@ export default function MyBorrowings() {
           )}
         </>
       )}
+      </div>
     </AppShell>
   )
 }
