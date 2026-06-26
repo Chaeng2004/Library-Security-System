@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useIdleTimeout } from '../hooks/useIdleTimeout'
-import { getPendingBorrowings, getPendingReturnBorrowings, getAllBorrowings, approveBorrowing, rejectBorrowing, confirmReturn, getBooks, addBook, updateBook, deleteBook, getAllUsers, getUserEmailsByIds, getBorrowingCountsByUserIds, updateUserCreditScore } from '../lib/api'
+import { getPendingBorrowings, getPendingReturnBorrowings, getAllBorrowings, approveBorrowing, rejectBorrowing, confirmReturn, getBooks, addBook, updateBook, deleteBook, getAllUsers, getBorrowingCountsByUserIds, updateUserCreditScore } from '../lib/api'
 import { getCreditTier, getBorrowLimit, formatProfileName } from '../lib/credit'
 import { supabase } from '../lib/supabaseClient'
 import { Card } from '../components/ui/Card'
@@ -77,14 +77,10 @@ export default function AdminDashboard() {
     const { data } = await getAllUsers()
     const profiles = data || []
     const userIds = profiles.map((u) => u.id)
-    const [{ data: emailMap }, { data: borrowCounts }] = await Promise.all([
-      getUserEmailsByIds(userIds),
-      getBorrowingCountsByUserIds(userIds),
-    ])
+    const { data: borrowCounts } = await getBorrowingCountsByUserIds(userIds)
     setUsersList(
       profiles.map((u) => ({
         ...u,
-        email: emailMap?.[u.id] || null,
         borrowStats: borrowCounts?.[u.id] ?? { active: 0, return_pending: 0, pending: 0, total: 0 },
       }))
     )
@@ -686,10 +682,12 @@ export default function AdminDashboard() {
                 </div>
                 {usersList.map((usr) => {
                   const displayName = formatProfileName(usr)
+                  const email = usr.email?.trim() || null
                   const score = usr.credit_score ?? 100
                   const tier = getCreditTier(score)
                   const stats = usr.borrowStats ?? { active: 0, return_pending: 0, pending: 0, total: 0 }
                   const openLoans = stats.active + stats.return_pending + stats.pending
+                  const primaryLabel = displayName || email || `User ${usr.id.slice(0, 8)}…`
 
                   return (
                     <Card key={usr.id} className="p-4">
@@ -697,7 +695,7 @@ export default function AdminDashboard() {
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-sm font-semibold text-gray-900 truncate">
-                              {displayName || usr.email || `User ${usr.id.slice(0, 8)}…`}
+                              {primaryLabel}
                             </span>
                             <span className={`px-2 py-0.5 rounded text-[10px] font-semibold capitalize ${
                               usr.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'
@@ -705,8 +703,11 @@ export default function AdminDashboard() {
                               {usr.role || 'user'}
                             </span>
                           </div>
-                          {displayName && usr.email && (
-                            <p className="text-xs text-gray-500 mt-0.5 truncate">{usr.email}</p>
+                          {displayName && email && (
+                            <p className="text-xs text-gray-500 mt-0.5 truncate">{email}</p>
+                          )}
+                          {!email && (
+                            <p className="text-xs text-gray-400 mt-0.5">ID: {usr.id.slice(0, 8)}…</p>
                           )}
                           <p className="text-xs text-gray-400 mt-1">
                             Library ID: {usr.library_id?.trim() ? usr.library_id : 'Not set'}
@@ -719,7 +720,11 @@ export default function AdminDashboard() {
                         <div className="text-xs text-gray-600 space-y-0.5">
                           <p>
                             <span className="text-gray-400">Email: </span>
-                            {usr.email || <span className="text-gray-400 italic">Unknown</span>}
+                            {email || (
+                              <span className="text-gray-400 italic" title="No email in Auth, borrowings, or audit logs">
+                                Not on file
+                              </span>
+                            )}
                           </p>
                           {usr.phone?.trim() && (
                             <p><span className="text-gray-400">Phone: </span>{usr.phone}</p>

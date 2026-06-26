@@ -108,12 +108,125 @@ ALTER TABLE public.borrowings DROP CONSTRAINT IF EXISTS borrowings_status_check;
 ALTER TABLE public.borrowings ADD CONSTRAINT borrowings_status_check
   CHECK (status IN ('pending', 'active', 'return_pending', 'returned'));
 
--- 7. Promote a user to admin (replace the email before running)
+-- 7. Admin access to all user profiles (fixes Users & Credit tab showing only self)
+-- Uses SECURITY DEFINER helper to avoid RLS recursion when checking admin role.
+
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.user_profiles
+    WHERE id = auth.uid() AND role = 'admin'
+  );
+$$;
+
+ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own profile" ON public.user_profiles;
+CREATE POLICY "Users can view own profile"
+  ON public.user_profiles FOR SELECT
+  TO authenticated
+  USING (auth.uid() = id);
+
+DROP POLICY IF EXISTS "Admins can view all profiles" ON public.user_profiles;
+CREATE POLICY "Admins can view all profiles"
+  ON public.user_profiles FOR SELECT
+  TO authenticated
+  USING (public.is_admin());
+
+DROP POLICY IF EXISTS "Users can update own profile" ON public.user_profiles;
+CREATE POLICY "Users can update own profile"
+  ON public.user_profiles FOR UPDATE
+  TO authenticated
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
+
+DROP POLICY IF EXISTS "Admins can update all profiles" ON public.user_profiles;
+CREATE POLICY "Admins can update all profiles"
+  ON public.user_profiles FOR UPDATE
+  TO authenticated
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
+
+-- Returns every auth user with profile fields + email (admin only).
+-- Includes users who registered but have no profile row yet.
+CREATE OR REPLACE FUNCTION public.get_admin_user_directory()
+RETURNS TABLE (
+  id uuid,
+  email text,
+  first_name text,
+  last_name text,
+  phone text,
+  address text,
+  library_id text,
+  role text,
+  credit_score integer,
+  created_at timestamptz
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Admin access required';
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    u.id,
+    COALESCE(
+      NULLIF(TRIM(u.email::text), ''),
+      (
+        SELECT b.user_email
+        FROM public.borrowings_with_email b
+        WHERE b.user_id = u.id AND b.user_email IS NOT NULL AND TRIM(b.user_email) <> ''
+        LIMIT 1
+      ),
+      (
+        SELECT al.user_email
+        FROM public.audit_logs al
+        WHERE al.user_id = u.id AND al.user_email IS NOT NULL AND TRIM(al.user_email) <> ''
+        ORDER BY al.created_at DESC
+        LIMIT 1
+      )
+    )::text AS email,
+    COALESCE(p.first_name, '')::text,
+    COALESCE(p.last_name, '')::text,
+    COALESCE(p.phone, '')::text,
+    COALESCE(p.address, '')::text,
+    COALESCE(p.library_id, '')::text,
+    COALESCE(p.role, 'user')::text,
+    COALESCE(p.credit_score, 100)::integer,
+    COALESCE(p.created_at, u.created_at)
+  FROM auth.users u
+  LEFT JOIN public.user_profiles p ON p.id = u.id
+  ORDER BY COALESCE(p.created_at, u.created_at) DESC;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_admin_user_directory() TO authenticated;
+
+-- Allow admins to read all borrowings (for per-user stats on Users & Credit tab)
+ALTER TABLE public.borrowings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Admins can view all borrowings" ON public.borrowings;
+CREATE POLICY "Admins can view all borrowings"
+  ON public.borrowings FOR SELECT
+  TO authenticated
+  USING (public.is_admin());
+
+-- 8. Promote a user to admin (replace the email before running)
 -- UPDATE public.user_profiles
 --   SET role = 'admin'
 --   WHERE id = (SELECT id FROM auth.users WHERE email = 'YOUR_ADMIN_EMAIL_HERE');
 
--- 8. Verify deployment (optional)
+-- 9. Verify deployment (optional)
 -- SELECT tgname FROM pg_trigger WHERE tgname = 'trg_handle_borrowing_return';
 -- SELECT proname FROM pg_proc WHERE proname IN ('handle_borrowing_return', 'penalize_overdue_borrowings');
 -- SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'borrowings_status_check';

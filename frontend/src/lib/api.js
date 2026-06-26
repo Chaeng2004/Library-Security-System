@@ -208,11 +208,39 @@ export async function deleteUserProfile(userId) {
 }
 
 export async function getAllUsers() {
-  const { data, error } = await supabase
-    .from('user_profiles')
-    .select('*')
-    .order('created_at', { ascending: false })
-  return { data, error }
+  const { data: rpcData, error: rpcError } = await supabase.rpc('get_admin_user_directory')
+
+  let profiles = rpcData
+  let error = rpcError
+
+  if (rpcError) {
+    const fallback = await supabase
+      .from('user_profiles')
+      .select('*')
+      .order('created_at', { ascending: false })
+    profiles = fallback.data
+    error = fallback.error
+  }
+
+  if (error || !profiles?.length) return { data: profiles ?? [], error }
+
+  const userIds = profiles.map((u) => u.id)
+  const { data: emailMap } = await getUserEmailsByIds(userIds)
+
+  const normalized = profiles.map((u) => ({
+    ...u,
+    email: resolveUserEmail(u, emailMap),
+  }))
+
+  return { data: normalized, error: null }
+}
+
+function resolveUserEmail(profile, emailMap = {}) {
+  const direct = profile?.email?.trim()
+  if (direct) return direct
+  const mapped = emailMap?.[profile?.id]?.trim()
+  if (mapped) return mapped
+  return null
 }
 
 export async function getUserEmailsByIds(userIds = []) {
