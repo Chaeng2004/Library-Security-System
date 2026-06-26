@@ -1,27 +1,33 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../hooks/useToast'
 import { getUserBorrowings, requestReturn, formatReturnRequestError } from '../lib/api'
 import { formatDate } from '../lib/format'
 import { AppShell } from '../components/layout/AppShell'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
-import { LoadingSpinner } from '../components/ui/LoadingSpinner'
+import { AdminTabSkeleton } from '../components/ui/Skeleton'
+import { BookCoverThumb } from '../components/ui/BookCoverThumb'
 import { EmptyState } from '../components/ui/EmptyState'
 import { StatusBadge } from '../components/ui/StatusBadge'
 
 function BorrowingCard({ borrowing, action }) {
   return (
     <Card className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-      <div className="flex-1 min-w-0">
-        <h3 className="text-base font-semibold text-gray-900 truncate">
-          {borrowing.books?.title || 'Unknown Book'}
-        </h3>
-        <p className="text-sm text-gray-600">{borrowing.books?.author || 'Unknown Author'}</p>
-        <div className="mt-2 text-xs text-gray-500 space-y-0.5">
-          <p>Requested: {formatDate(borrowing.borrowed_date)}</p>
-          {borrowing.due_date && <p>Due: {formatDate(borrowing.due_date)}</p>}
-          {borrowing.returned_date && <p>Returned: {formatDate(borrowing.returned_date)}</p>}
-          {borrowing.books?.isbn && <p>ISBN: {borrowing.books.isbn}</p>}
+      <div className="flex gap-4 flex-1 min-w-0">
+        <BookCoverThumb book={borrowing.books} size="sm" />
+        <div className="min-w-0 flex-1">
+          <h3 className="text-base font-semibold text-gray-900 truncate">
+            {borrowing.books?.title || 'Unknown Book'}
+          </h3>
+          <p className="text-sm text-gray-600">{borrowing.books?.author || 'Unknown Author'}</p>
+          <div className="mt-2 text-xs text-gray-500 space-y-0.5">
+            <p>Requested: {formatDate(borrowing.borrowed_date)}</p>
+            {borrowing.due_date && <p>Due: {formatDate(borrowing.due_date)}</p>}
+            {borrowing.returned_date && <p>Returned: {formatDate(borrowing.returned_date)}</p>}
+            {borrowing.books?.isbn && <p>ISBN: {borrowing.books.isbn}</p>}
+          </div>
         </div>
       </div>
       <div className="flex items-center gap-2 shrink-0">{action}</div>
@@ -29,7 +35,7 @@ function BorrowingCard({ borrowing, action }) {
   )
 }
 
-function Section({ title, count, children, emptyTitle, emptyDescription }) {
+function Section({ title, count, children, emptyTitle, emptyDescription, emptyAction }) {
   return (
     <section>
       <h2 className="text-lg font-semibold text-gray-900 mb-4">
@@ -38,7 +44,7 @@ function Section({ title, count, children, emptyTitle, emptyDescription }) {
       </h2>
       {children ?? (
         <Card>
-          <EmptyState title={emptyTitle} description={emptyDescription} />
+          <EmptyState title={emptyTitle} description={emptyDescription} action={emptyAction} />
         </Card>
       )}
     </section>
@@ -46,7 +52,9 @@ function Section({ title, count, children, emptyTitle, emptyDescription }) {
 }
 
 export default function MyBorrowings() {
+  const navigate = useNavigate()
   const { user } = useAuth()
+  const toast = useToast()
   const [borrowings, setBorrowings] = useState([])
   const [loading, setLoading] = useState(true)
   const [returnStatus, setReturnStatus] = useState({})
@@ -69,13 +77,24 @@ export default function MyBorrowings() {
     const { error } = await requestReturn(borrowingId)
     if (error) {
       setReturnStatus((prev) => ({ ...prev, [borrowingId]: 'error' }))
-      alert('Failed to request return: ' + formatReturnRequestError(error))
+      toast.error('Failed to request return: ' + formatReturnRequestError(error))
     } else {
       setReturnStatus((prev) => ({ ...prev, [borrowingId]: 'success' }))
+      toast.success('Return requested. An admin will confirm when the book is received.')
       fetchBorrowings()
       setTimeout(() => setReturnStatus((prev) => ({ ...prev, [borrowingId]: null })), 2000)
     }
   }
+
+  const browseAction = (
+    <button
+      type="button"
+      onClick={() => navigate('/books')}
+      className="text-sm font-medium text-gray-900 underline underline-offset-2"
+    >
+      Browse books
+    </button>
+  )
 
   const activeBorrowings = borrowings.filter((b) => b.status === 'active')
   const returnPendingBorrowings = borrowings.filter((b) => b.status === 'return_pending')
@@ -87,7 +106,15 @@ export default function MyBorrowings() {
     <AppShell title="My Borrowings" badges={{ borrowings: openCount }}>
       <div className="flex flex-col gap-6 min-h-[200px]">
       {loading ? (
-        <LoadingSpinner label="Loading borrowings…" />
+        <AdminTabSkeleton rows={3} />
+      ) : borrowings.length === 0 ? (
+        <Card>
+          <EmptyState
+            title="No borrowings yet"
+            description="Browse the catalog to request your first book."
+            action={browseAction}
+          />
+        </Card>
       ) : (
         <>
           <Section
@@ -128,6 +155,7 @@ export default function MyBorrowings() {
             count={activeBorrowings.length}
             emptyTitle="No active borrowings"
             emptyDescription="Browse books to start a borrow request."
+            emptyAction={browseAction}
           >
             {activeBorrowings.length > 0 && (
               <div className="grid gap-3">

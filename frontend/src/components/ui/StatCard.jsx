@@ -87,7 +87,7 @@ export function StatCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-xs font-medium text-gray-600">{label}</p>
-          <p className={`mt-1 font-bold truncate ${prominent ? 'text-3xl' : 'text-lg'} ${tone.value}`}>
+          <p className={`mt-1 font-bold ${prominent ? `text-3xl truncate ${tone.value}` : `text-base leading-snug ${tone.value}`}`}>
             {value}
           </p>
           {helper && <p className="text-[11px] text-gray-500 mt-1">{helper}</p>}

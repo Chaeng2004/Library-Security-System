@@ -8,6 +8,7 @@ import { isStaleSessionError } from '../lib/authErrors'
 import { Card } from '../components/ui/Card'
 import { TextInput } from '../components/ui/TextInput'
 import { Button } from '../components/ui/Button'
+import { AuthLayout } from '../components/layout/AuthLayout'
 
 const MFA_FRIENDLY_NAME = 'Authenticator app'
 const MFA_ISSUER = 'LibrarySecuritySystem'
@@ -250,30 +251,37 @@ export default function MfaSetup() {
     }
   }
 
+  const mfaSubtitle = isReauth
+    ? 'Open your authenticator app and enter the 6-digit code.'
+    : resumeWithoutQr
+      ? 'Enter the code from your authenticator app to finish setup, or reset below if you lost access.'
+      : 'Scan the QR code with Google Authenticator, Authy, or any TOTP app.'
+
   if (enrolling) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-500 text-sm">Setting up authenticator…</p>
-      </div>
+      <AuthLayout
+        title={isReauth ? 'Verify your identity' : 'Set up two-factor authentication'}
+        subtitle="Setting up authenticator…"
+        wide
+      >
+        <Card>
+          <p className="text-sm text-gray-500 text-center py-4">Please wait…</p>
+        </Card>
+      </AuthLayout>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="mb-8 text-center">
-          <h1 className="text-2xl font-semibold text-gray-900">
-            {isReauth ? 'Verify your identity' : 'Set up two-factor authentication'}
-          </h1>
-          <p className="mt-1 text-sm text-gray-500">
-            {isReauth
-              ? 'Open your authenticator app and enter the 6-digit code.'
-              : resumeWithoutQr
-                ? 'Enter the code from your authenticator app to finish setup, or reset below if you lost access.'
-                : 'Scan the QR code with Google Authenticator, Authy, or any TOTP app.'}
-          </p>
-        </div>
-
+    <AuthLayout
+      title={isReauth ? 'Verify your identity' : 'Set up two-factor authentication'}
+      subtitle={mfaSubtitle}
+      wide
+      footer={
+        <p className="mt-6 text-center text-xs text-gray-400">
+          Signed in as <span className="font-medium">{user?.email}</span>
+        </p>
+      }
+    >
         <Card>
           {serverError && (
             <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2 mb-4">
@@ -356,11 +364,6 @@ export default function MfaSetup() {
             </>
           )}
         </Card>
-
-        <p className="mt-6 text-center text-xs text-gray-400">
-          Signed in as <span className="font-medium">{user?.email}</span>
-        </p>
-      </div>
-    </div>
+    </AuthLayout>
   )
 }

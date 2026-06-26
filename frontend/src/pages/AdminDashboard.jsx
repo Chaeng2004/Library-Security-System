@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../hooks/useToast'
 import { useIdleTimeout } from '../hooks/useIdleTimeout'
 import { getPendingBorrowings, getPendingReturnBorrowings, getAllBorrowings, approveBorrowing, rejectBorrowing, confirmReturn, getBooks, addBook, updateBook, deleteBook, getAllUsers, getBorrowingCountsByUserIds, updateUserCreditScore } from '../lib/api'
-import { getCreditTier, getBorrowLimit, formatProfileName } from '../lib/credit'
+import { getCreditTier, getBorrowLimit, formatProfileName, getExpectedCreditDeltaOnReturn } from '../lib/credit'
 import { formatDate } from '../lib/format'
 import { AdminShell } from '../components/layout/AdminShell'
 import { supabase } from '../lib/supabaseClient'
@@ -12,7 +13,8 @@ import { StatCard } from '../components/ui/StatCard'
 import { Button } from '../components/ui/Button'
 import { TextInput } from '../components/ui/TextInput'
 import { ConfirmModal } from '../components/ui/ConfirmModal'
-import { LoadingSpinner } from '../components/ui/LoadingSpinner'
+import { AdminTabSkeleton, StatCardSkeletonRow } from '../components/ui/Skeleton'
+import { BookCoverThumb } from '../components/ui/BookCoverThumb'
 import { EmptyState } from '../components/ui/EmptyState'
 import { StatusBadge } from '../components/ui/StatusBadge'
 
@@ -25,6 +27,7 @@ export default function AdminDashboard() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { signOut } = useAuth()
+  const toast = useToast()
 
   const [pendingBorrowings, setPendingBorrowings] = useState([])
   const [pendingReturnBorrowings, setPendingReturnBorrowings] = useState([])
@@ -129,25 +132,30 @@ export default function AdminDashboard() {
       const { error } = await approveBorrowing(borrowing.id, borrowing.book_id)
       if (error) {
         setActionStatus(prev => ({ ...prev, [borrowing.id]: 'error' }))
-        alert('Failed to approve: ' + error.message)
+        toast.error('Failed to approve: ' + error.message)
       } else {
         setActionStatus(prev => ({ ...prev, [borrowing.id]: 'approved' }))
+        toast.success('Borrow request approved.')
         fetchData()
       }
     } else if (type === 'reject') {
       const { error } = await rejectBorrowing(borrowing.id)
       if (error) {
         setActionStatus(prev => ({ ...prev, [borrowing.id]: 'error' }))
-        alert('Failed to reject: ' + error.message)
+        toast.error('Failed to reject: ' + error.message)
       } else {
+        toast.success('Borrow request rejected.')
         fetchData()
       }
     } else if (type === 'return') {
       const { error } = await confirmReturn(borrowing.id, borrowing.book_id)
       if (error) {
         setActionStatus(prev => ({ ...prev, [borrowing.id]: 'error' }))
-        alert('Failed to confirm return: ' + error.message)
+        toast.error('Failed to confirm return: ' + error.message)
       } else {
+        const delta = getExpectedCreditDeltaOnReturn(borrowing)
+        const sign = delta >= 0 ? '+' : ''
+        toast.success(`Return confirmed. User credit ${sign}${delta} pts (visible on their next dashboard visit).`)
         fetchData()
       }
     }
@@ -189,13 +197,15 @@ export default function AdminDashboard() {
     setBookForm({ title: '', author: '', isbn: '', description: '', available: true, cover_url: '' })
     setCoverFile(null)
     setCoverPreview(null)
+    toast.success(editingBook ? 'Book updated.' : 'Book added.')
     fetchBooks()
   }
 
   const handleDeleteBook = async (id) => {
     if (!window.confirm('Delete this book? This cannot be undone.')) return
     const { error } = await deleteBook(id)
-    if (error) { alert('Failed to delete: ' + error.message); return }
+    if (error) { toast.error('Failed to delete: ' + error.message); return }
+    toast.success('Book deleted.')
     fetchBooks()
   }
 
@@ -209,13 +219,14 @@ export default function AdminDashboard() {
 
   const handleCreditUpdateSubmit = async () => {
     if (creditFormScore < 0 || creditFormScore > 200) {
-      alert('Credit score must be between 0 and 200')
+      toast.error('Credit score must be between 0 and 200')
       return
     }
     const { error } = await updateUserCreditScore(editingUser.id, creditFormScore)
     if (error) {
-      alert('Failed to update credit score: ' + error.message)
+      toast.error('Failed to update credit score: ' + error.message)
     } else {
+      toast.success('Credit score updated.')
       setEditingUser(null)
       fetchUsers(false)
     }
@@ -237,36 +248,40 @@ export default function AdminDashboard() {
       />
 
       <div className="flex flex-col gap-6">
+        {loading ? (
+          <StatCardSkeletonRow count={4} />
+        ) : (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <StatCard
             label="Pending Requests"
-            value={loading ? '…' : String(pendingBorrowings.length)}
+            value={String(pendingBorrowings.length)}
             variant="yellow"
             icon="clock"
             prominent
           />
           <StatCard
             label="Return Requests"
-            value={loading ? '…' : String(pendingReturnBorrowings.length)}
+            value={String(pendingReturnBorrowings.length)}
             variant="blue"
             icon="return"
             prominent
           />
           <StatCard
             label="Active Borrowings"
-            value={loading ? '…' : String(allBorrowings.filter(b => b.status === 'active').length)}
+            value={String(allBorrowings.filter(b => b.status === 'active').length)}
             variant="green"
             icon="book"
             prominent
           />
           <StatCard
             label="Total Borrowings"
-            value={loading ? '…' : String(allBorrowings.length)}
+            value={String(allBorrowings.length)}
             variant="gray"
             icon="clipboard"
             prominent
           />
         </div>
+        )}
 
         <div className="flex gap-2 flex-wrap">
           <button
@@ -303,7 +318,7 @@ export default function AdminDashboard() {
 
         <div className="min-h-[200px]">
         {loading && (activeTab === 'pending' || activeTab === 'returns' || activeTab === 'all') && (
-          <LoadingSpinner label="Loading borrowings…" />
+          <AdminTabSkeleton rows={3} />
         )}
 
         {!loading && activeTab === 'pending' && (
@@ -313,7 +328,9 @@ export default function AdminDashboard() {
             <div className="grid gap-4">
               {pendingBorrowings.map((borrowing) => (
                 <Card key={borrowing.id} className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-                  <div className="flex-1">
+                  <div className="flex gap-4 flex-1 min-w-0">
+                    <BookCoverThumb book={borrowing.books} size="sm" />
+                    <div className="flex-1 min-w-0">
                     <h3 className="text-base font-semibold text-gray-900">
                       {borrowing.books?.title || 'Unknown Book'}
                     </h3>
@@ -322,6 +339,7 @@ export default function AdminDashboard() {
                       <p>Requested by: <span className="font-medium text-gray-700">{borrowing.user_email}</span></p>
                       <p>Requested: {formatDate(borrowing.borrowed_date)}</p>
                       <p>Due: {formatDate(borrowing.due_date)}</p>
+                    </div>
                     </div>
                   </div>
                   <div className="flex gap-2 shrink-0 flex-wrap">
@@ -354,7 +372,9 @@ export default function AdminDashboard() {
             <div className="grid gap-4">
               {pendingReturnBorrowings.map((borrowing) => (
                 <Card key={borrowing.id} className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-                  <div className="flex-1">
+                  <div className="flex gap-4 flex-1 min-w-0">
+                    <BookCoverThumb book={borrowing.books} size="sm" />
+                    <div className="flex-1 min-w-0">
                     <h3 className="text-base font-semibold text-gray-900">
                       {borrowing.books?.title || 'Unknown Book'}
                     </h3>
@@ -363,6 +383,7 @@ export default function AdminDashboard() {
                       <p>User: <span className="font-medium text-gray-700">{borrowing.user_email}</span></p>
                       <p>Borrowed: {formatDate(borrowing.borrowed_date)}</p>
                       <p>Due: {formatDate(borrowing.due_date)}</p>
+                    </div>
                     </div>
                   </div>
                   <div className="flex gap-2 shrink-0 items-center flex-wrap">
@@ -389,7 +410,9 @@ export default function AdminDashboard() {
             ) : (
               allBorrowings.map((borrowing) => (
                 <Card key={borrowing.id} className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-                  <div className="flex-1">
+                  <div className="flex gap-4 flex-1 min-w-0">
+                    <BookCoverThumb book={borrowing.books} size="sm" />
+                    <div className="flex-1 min-w-0">
                     <h3 className="text-base font-semibold text-gray-900">
                       {borrowing.books?.title || 'Unknown Book'}
                     </h3>
@@ -399,6 +422,7 @@ export default function AdminDashboard() {
                       <p>Borrowed: {formatDate(borrowing.borrowed_date)}</p>
                       <p>Due: {formatDate(borrowing.due_date)}</p>
                       {borrowing.returned_date && <p>Returned: {formatDate(borrowing.returned_date)}</p>}
+                    </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0 flex-wrap">
@@ -513,7 +537,7 @@ export default function AdminDashboard() {
             )}
 
             {booksLoading ? (
-              <LoadingSpinner label="Loading books…" />
+              <AdminTabSkeleton rows={4} />
             ) : books.length === 0 ? (
               <Card><EmptyState title="No books in the library" description="Add your first book to get started." /></Card>
             ) : (
@@ -560,12 +584,12 @@ export default function AdminDashboard() {
             </div>
 
             {usersLoading ? (
-              <LoadingSpinner label="Loading users…" />
+              <AdminTabSkeleton rows={3} />
             ) : usersList.length === 0 ? (
               <Card><EmptyState title="No users found" description="Registered users will appear here after section 7 SQL is applied." /></Card>
             ) : (
-              <div className="space-y-3 overflow-x-auto">
-                <div className="hidden md:grid md:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-4 px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[640px]">
+              <div className="space-y-3">
+                <div className="hidden lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-4 px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
                   <span>User</span>
                   <span>Contact</span>
                   <span>Borrowings</span>
@@ -583,8 +607,8 @@ export default function AdminDashboard() {
 
                   return (
                     <Card key={usr.id}>
-                      <div className="grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-center min-w-0 md:min-w-[640px]">
-                        <div className="min-w-0">
+                      <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-center">
+                        <div className="min-w-0 pb-3 lg:pb-0 border-b border-gray-100 lg:border-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-sm font-semibold text-gray-900 truncate">
                               {primaryLabel}
@@ -609,7 +633,8 @@ export default function AdminDashboard() {
                           </p>
                         </div>
 
-                        <div className="text-xs text-gray-600 space-y-0.5">
+                        <div className="text-xs text-gray-600 space-y-0.5 pb-3 lg:pb-0 border-b border-gray-100 lg:border-0">
+                          <p className="lg:hidden text-[10px] font-semibold uppercase text-gray-400 mb-1">Contact</p>
                           <p>
                             <span className="text-gray-400">Email: </span>
                             {email || (
@@ -623,14 +648,16 @@ export default function AdminDashboard() {
                           )}
                         </div>
 
-                        <div className="text-xs text-gray-600 space-y-0.5">
+                        <div className="text-xs text-gray-600 space-y-0.5 pb-3 lg:pb-0 border-b border-gray-100 lg:border-0">
+                          <p className="lg:hidden text-[10px] font-semibold uppercase text-gray-400 mb-1">Borrowings</p>
                           <p><span className="text-gray-400">Active: </span><span className="font-medium text-gray-900">{stats.active}</span></p>
                           <p><span className="text-gray-400">Pending: </span>{stats.pending + stats.return_pending}</p>
                           <p><span className="text-gray-400">Total: </span>{stats.total}</p>
                           <p><span className="text-gray-400">Limit: </span>{getBorrowLimit(score)} books ({openLoans} open)</p>
                         </div>
 
-                        <div>
+                        <div className="pb-3 lg:pb-0 border-b border-gray-100 lg:border-0">
+                          <p className="lg:hidden text-[10px] font-semibold uppercase text-gray-400 mb-1">Credit</p>
                           <div className="flex items-center gap-2">
                             <span className="text-lg font-bold text-gray-900">{score}</span>
                             <span className="text-xs text-gray-400">/ 200</span>
@@ -640,7 +667,7 @@ export default function AdminDashboard() {
                           </span>
                         </div>
 
-                        <div className="flex md:justify-end">
+                        <div className="flex lg:justify-end pt-1 lg:pt-0">
                           <button
                             onClick={() => {
                               setEditingUser(usr)

@@ -11,6 +11,8 @@ import { Card } from '../components/ui/Card'
 import { StatCard, QuickActionCard } from '../components/ui/StatCard'
 import { CreditScoreCard } from '../components/ui/CreditScoreCard'
 import { LoadingSpinner } from '../components/ui/LoadingSpinner'
+import { StatCardSkeletonRow, AdminTabSkeleton } from '../components/ui/Skeleton'
+import { BookCoverThumb } from '../components/ui/BookCoverThumb'
 import { EmptyState } from '../components/ui/EmptyState'
 import { StatusBadge } from '../components/ui/StatusBadge'
 
@@ -29,18 +31,6 @@ const EVENT_LABELS = {
   USER_REGISTERED: 'Account registered',
   PASSWORD_RESET_REQUESTED: 'Password reset requested',
   PASSWORD_RESET_SUCCESS: 'Password reset',
-}
-
-function formatSeconds(s) {
-  if (s >= 3600) {
-    const h = Math.floor(s / 3600)
-    const m = Math.floor((s % 3600) / 60)
-    const sec = s % 60
-    return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
-  }
-  const m = Math.floor(s / 60)
-  const sec = s % 60
-  return `${m}:${String(sec).padStart(2, '0')}`
 }
 
 function SectionTitle({ title, description }) {
@@ -64,6 +54,7 @@ export default function Dashboard() {
   const [recentBorrowings, setRecentBorrowings] = useState([])
   const [statsLoading, setStatsLoading] = useState(true)
   const [creditScore, setCreditScore] = useState(100)
+  const [profileIncomplete, setProfileIncomplete] = useState(false)
 
   const fetchLogs = useCallback(async () => {
     setLogsLoading(true)
@@ -90,7 +81,10 @@ export default function Dashboard() {
     setPendingBorrowings(pending.data ?? [])
     setRecentBorrowings(recent.data ?? [])
     setReturnPendingBorrowings((allBorrowings.data ?? []).filter((b) => b.status === 'return_pending'))
-    if (profile.data) setCreditScore(profile.data.credit_score ?? 100)
+    if (profile.data) {
+      setCreditScore(profile.data.credit_score ?? 100)
+      setProfileIncomplete(!profile.data.first_name?.trim())
+    }
     setStatsLoading(false)
   }, [user])
 
@@ -107,7 +101,7 @@ export default function Dashboard() {
     navigate('/login', { replace: true })
   }, [signOut, navigate])
 
-  const { secondsLeft, isWarning } = useIdleTimeout(handleTimeout, IDLE_MS, WARNING_MS)
+  const { secondsLeft } = useIdleTimeout(handleTimeout, IDLE_MS, WARNING_MS)
 
   useEffect(() => {
     sessionStorage.setItem('sessionIdleSecondsLeft', secondsLeft)
@@ -122,8 +116,8 @@ export default function Dashboard() {
   const openLoans = activeBorrowings.length + pendingBorrowings.length + returnPendingBorrowings.length
   const navBadgeCount = activeBorrowings.length + returnPendingBorrowings.length
   const overdueCount = activeBorrowings.filter((b) => new Date(b.due_date) < new Date()).length
-  const mfaLabel = aal === 'aal2' ? 'MFA verified (AAL2)' : nextAal === 'aal2' ? 'MFA required' : 'Password only (AAL1)'
-  const idleMinutes = Math.round(IDLE_MS / 60000)
+  const authLabel = aal === 'aal2' ? 'Password + MFA' : nextAal === 'aal2' ? 'MFA required' : 'Password only'
+  const roleLabel = role === 'admin' ? 'Admin' : 'User'
 
   return (
     <AppShell
@@ -132,18 +126,25 @@ export default function Dashboard() {
     >
       <div className="flex flex-col gap-6">
         <Card className="border-l-4 border-l-gray-900">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4 pb-4 border-b border-gray-100">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">User dashboard</h2>
-              <p className="text-sm text-gray-500 mt-0.5">{user?.email}</p>
-            </div>
-            <p className="text-xs text-gray-400">
-              Session idle: {formatSeconds(secondsLeft)}
-              {isWarning && <span className="ml-2 text-amber-600 font-medium">· expiring soon</span>}
-            </p>
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">User dashboard</h2>
+            <p className="text-sm text-gray-500 mt-0.5">{user?.email}</p>
           </div>
           <CreditScoreCard score={creditScore} openLoans={openLoans} />
         </Card>
+
+        {!statsLoading && profileIncomplete && (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <p className="text-sm text-blue-800">Complete your profile so we can personalize your library account.</p>
+            <button
+              type="button"
+              onClick={() => navigate('/profile')}
+              className="text-sm font-medium text-blue-900 underline underline-offset-2 shrink-0 text-left sm:text-right"
+            >
+              Complete profile
+            </button>
+          </div>
+        )}
 
         {!statsLoading && overdueCount > 0 && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex gap-3">
@@ -173,10 +174,13 @@ export default function Dashboard() {
           </div>
         )}
 
+        {statsLoading ? (
+          <StatCardSkeletonRow count={4} />
+        ) : (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <StatCard
             label="Active loans"
-            value={statsLoading ? '…' : String(activeBorrowings.length)}
+            value={String(activeBorrowings.length)}
             helper="Currently borrowed"
             variant="green"
             icon="book"
@@ -184,7 +188,7 @@ export default function Dashboard() {
           />
           <StatCard
             label="Pending approval"
-            value={statsLoading ? '…' : String(pendingBorrowings.length)}
+            value={String(pendingBorrowings.length)}
             helper="Waiting for admin"
             variant="yellow"
             icon="clock"
@@ -192,7 +196,7 @@ export default function Dashboard() {
           />
           <StatCard
             label="Overdue"
-            value={statsLoading ? '…' : String(overdueCount)}
+            value={String(overdueCount)}
             helper="Past due date"
             variant="red"
             icon="alert"
@@ -200,16 +204,17 @@ export default function Dashboard() {
           />
           <StatCard
             label="Recent returns"
-            value={statsLoading ? '…' : String(recentBorrowings.length)}
+            value={String(recentBorrowings.length)}
             helper="Last 3 returns"
             variant="blue"
             icon="return"
             prominent
           />
         </div>
+        )}
 
         {statsLoading ? (
-          <LoadingSpinner label="Loading borrowings…" />
+          <AdminTabSkeleton rows={2} />
         ) : (
           <>
             {activeBorrowings.length > 0 && (
@@ -219,8 +224,9 @@ export default function Dashboard() {
                   {activeBorrowings.map((b) => {
                     const overdue = new Date(b.due_date) < new Date()
                     return (
-                      <div key={b.id} className="py-3 flex items-center justify-between gap-4">
-                        <div className="min-w-0">
+                      <div key={b.id} className="py-3 flex items-center gap-4">
+                        <BookCoverThumb book={b.books} size="sm" />
+                        <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-gray-900 truncate">{b.books?.title ?? '—'}</p>
                           <p className="text-xs text-gray-500">{b.books?.author ?? ''}</p>
                         </div>
@@ -242,8 +248,9 @@ export default function Dashboard() {
                 <SectionTitle title="Pending requests" />
                 <div className="divide-y divide-gray-100">
                   {pendingBorrowings.map((b) => (
-                    <div key={b.id} className="py-3 flex items-center justify-between gap-4">
-                      <div className="min-w-0">
+                    <div key={b.id} className="py-3 flex items-center gap-4">
+                      <BookCoverThumb book={b.books} size="sm" />
+                      <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-gray-900 truncate">{b.books?.title ?? '—'}</p>
                         <p className="text-xs text-gray-500">{b.books?.author ?? ''}</p>
                       </div>
@@ -277,8 +284,9 @@ export default function Dashboard() {
                 <SectionTitle title="Recently returned" description="Your last 3 returned books" />
                 <div className="divide-y divide-gray-100">
                   {recentBorrowings.map((b) => (
-                    <div key={b.id} className="py-3 flex items-center justify-between gap-4">
-                      <div className="min-w-0">
+                    <div key={b.id} className="py-3 flex items-center gap-4">
+                      <BookCoverThumb book={b.books} size="sm" />
+                      <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-gray-900 truncate">{b.books?.title ?? '—'}</p>
                         <p className="text-xs text-gray-500">{b.books?.author ?? ''}</p>
                       </div>
@@ -318,18 +326,17 @@ export default function Dashboard() {
         </div>
 
         <Card>
-          <SectionTitle title="Account & security" description="Live session details from Supabase Auth" />
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <StatCard label="Role" value={role ?? 'user'} helper="From user_profiles" variant="gray" icon="users" />
-            <StatCard label="Authentication" value={mfaLabel} variant="purple" icon="shield" />
-            <StatCard label="Borrow limit" value={`${getBorrowLimit(creditScore)} books`} helper={`Score: ${creditScore}`} variant="blue" icon="chart" />
-            <StatCard label="Idle timeout" value={formatSeconds(secondsLeft)} helper={`${idleMinutes} min max · auto sign-out`} variant="yellow" icon="timer" />
+          <SectionTitle title="Account & security" description="Your sign-in and borrowing settings" />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <StatCard label="Role" value={roleLabel} variant="gray" icon="users" />
+            <StatCard label="Authentication" value={authLabel} variant="purple" icon="shield" />
+            <StatCard label="Borrow limit" value={`${getBorrowLimit(creditScore)} books`} helper={`Credit score: ${creditScore}`} variant="blue" icon="chart" />
           </div>
         </Card>
 
         <Card>
           <div className="flex items-center justify-between mb-4 gap-3">
-            <SectionTitle title="Security event log" description="Recent activity from audit_logs" />
+            <SectionTitle title="Security event log" description="Recent sign-in and security activity" />
             <button type="button" onClick={fetchLogs} className="text-xs text-gray-500 hover:text-gray-700 underline shrink-0">
               Refresh
             </button>

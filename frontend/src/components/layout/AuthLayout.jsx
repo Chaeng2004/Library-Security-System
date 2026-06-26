@@ -1,7 +1,7 @@
-export function AuthLayout({ title, subtitle, children, footer }) {
+export function AuthLayout({ title, subtitle, children, footer, wide = false }) {
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
+      <div className={`w-full ${wide ? 'max-w-md' : 'max-w-sm'}`}>
         <div className="mb-8 text-center">
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gray-900 mb-4">
             <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">

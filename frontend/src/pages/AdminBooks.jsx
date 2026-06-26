@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../hooks/useToast'
 import { getBooks, addBook, updateBook, deleteBook } from '../lib/api'
 import { supabase } from '../lib/supabaseClient'
 import { Card } from '../components/ui/Card'
@@ -12,6 +13,7 @@ const EMPTY_FORM = { title: '', author: '', isbn: '', description: '', cover_url
 export default function AdminBooks() {
   const navigate = useNavigate()
   const { user, signOut } = useAuth()
+  const toast = useToast()
 
   const [books, setBooks] = useState([])
   const [loading, setLoading] = useState(true)
@@ -64,10 +66,11 @@ export default function AdminBooks() {
   const handleDelete = async (book) => {
     const { error } = await deleteBook(book.id)
     if (error) {
-      alert('Failed to delete: ' + error.message)
+      toast.error('Failed to delete: ' + error.message)
     } else {
       fetchBooks()
       setConfirmDelete(null)
+      toast.success('Book deleted.')
     }
   }
 

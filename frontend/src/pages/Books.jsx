@@ -1,31 +1,17 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../hooks/useToast'
 import { getBooks, borrowBook, getUserBorrowings, getUserProfile } from '../lib/api'
+import { resolveBookCoverSrc } from '../lib/bookCovers'
 import { getMinDueDateString, validate, dueDateSchema } from '../lib/validation'
 import { AppShell } from '../components/layout/AppShell'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { TextInput } from '../components/ui/TextInput'
 import { CreditScoreCard } from '../components/ui/CreditScoreCard'
-import { LoadingSpinner } from '../components/ui/LoadingSpinner'
+import { Skeleton } from '../components/ui/Skeleton'
+import { BookCoverThumb } from '../components/ui/BookCoverThumb'
 import { EmptyState } from '../components/ui/EmptyState'
-import cover1984 from '../assets/1984.svg'
-import coverGreatGatsby from '../assets/thegreatgatsby.svg'
-import coverMockingbird from '../assets/tokillamockingbird.svg'
-import coverCatcher from '../assets/thecatcherintherye.svg'
-import coverProud from '../assets/iyanlavanzant.svg'
-
-const BOOK_COVERS = {
-  'The Great Gatsby': coverGreatGatsby,
-  'To Kill a Mockingbird': coverMockingbird,
-  '1984': cover1984,
-  'The Catcher in the Rye': coverCatcher,
-  'Proud': coverProud,
-}
-
-function getBookCover(title) {
-  return BOOK_COVERS[title] ?? null
-}
 
 const OPEN_BORROW_STATUSES = ['pending', 'active', 'return_pending']
 
@@ -39,7 +25,7 @@ function isOverdueBorrowing(b) {
 
 export default function Books() {
   const { user, role } = useAuth()
-  
+  const toast = useToast()
   const [books, setBooks] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -120,7 +106,7 @@ export default function Books() {
       b => b.book_id === selectedBookId && isOpenBorrowing(b.status)
     )
     if (alreadyRequested) {
-      alert('You already have a pending or active request for this book.')
+      toast.error('You already have a pending or active request for this book.')
       setSelectedBookId(null)
       setDueDate('')
       return
@@ -131,9 +117,10 @@ export default function Books() {
     
     if (error) {
       setBorrowingStatus(prev => ({ ...prev, [selectedBookId]: 'error' }))
-      alert('Failed to request book: ' + error.message)
+      toast.error('Failed to request book: ' + error.message)
     } else {
       setBorrowingStatus(prev => ({ ...prev, [selectedBookId]: 'success' }))
+      toast.success('Borrow request submitted. Waiting for admin approval.')
       fetchBooks()
       fetchUserBorrowings()
       setSelectedBookId(null)
@@ -147,6 +134,14 @@ export default function Books() {
   const minDueDate = getMinDueDateString()
   const openBorrowCount = borrowings.filter(b => b.status === 'active' || b.status === 'return_pending').length
   const openLoanCount = borrowings.filter(b => isOpenBorrowing(b.status)).length
+
+  const hasFilters = searchTerm.trim() || availableOnly
+
+  const clearFilters = () => {
+    setSearchTerm('')
+    setAvailableOnly(false)
+    fetchBooks('', false)
+  }
 
   const selectedBook = books.find(b => b.id === selectedBookId)
 
@@ -237,10 +232,35 @@ export default function Books() {
 
         {/* Books Grid */}
         {loading ? (
-          <LoadingSpinner label="Loading books…" />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {Array.from({ length: 6 }, (_, i) => (
+              <Card key={i}>
+                <div className="flex gap-4">
+                  <Skeleton className="w-20 h-[120px] rounded-md shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-3 w-1/2" />
+                    <Skeleton className="h-3 w-full" />
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
         ) : books.length === 0 ? (
           <Card>
-            <EmptyState title="No books found" description="Try adjusting your search or filters." />
+            <EmptyState
+              title={hasFilters ? 'No books match your search' : 'No books in the catalog'}
+              description={hasFilters ? 'Try different keywords or filters.' : 'Check back later for new titles.'}
+              action={hasFilters ? (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="text-sm font-medium text-gray-900 underline underline-offset-2"
+                >
+                  Clear search & filters
+                </button>
+              ) : null}
+            />
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -277,21 +297,7 @@ export default function Books() {
                   className="flex gap-4 flex-1 min-h-0 mb-4 cursor-pointer"
                   onClick={() => setDetailBookId(book.id)}
                 >
-                  {(book.cover_url || getBookCover(book.title)) ? (
-                    <div className="flex-shrink-0 w-20 h-[120px] rounded-md overflow-hidden bg-gray-50 border border-gray-100">
-                      <img
-                        src={book.cover_url || getBookCover(book.title)}
-                        alt={`${book.title} cover`}
-                        className="w-full h-full object-contain"
-                      />
-                    </div>
-                  ) : (
-                    <div className="shrink-0 w-20 h-[120px] rounded-md overflow-hidden bg-gray-100 flex items-center justify-center border border-gray-100">
-                      <svg className="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                      </svg>
-                    </div>
-                  )}
+                  <BookCoverThumb book={book} size="md" />
                   <div className="flex-1 min-w-0 flex flex-col">
                     <h3 className="text-base font-semibold text-gray-900 mb-1 line-clamp-2">
                       {book.title}
@@ -374,20 +380,16 @@ export default function Books() {
                 </button>
               </div>
               <div className="flex flex-col sm:flex-row gap-6 mb-6">
-                {(book.cover_url || getBookCover(book.title)) ? (
+                {resolveBookCoverSrc(book) ? (
                   <div className="shrink-0 w-32 h-[180px] rounded-lg overflow-hidden bg-gray-50 border border-gray-200">
                     <img
-                      src={book.cover_url || getBookCover(book.title)}
+                      src={resolveBookCoverSrc(book)}
                       alt={`${book.title} cover`}
                       className="w-full h-full object-contain"
                     />
                   </div>
                 ) : (
-                  <div className="shrink-0 w-32 h-[180px] rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center border border-gray-200">
-                    <svg className="w-12 h-12 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                    </svg>
-                  </div>
+                  <BookCoverThumb book={book} size="lg" className="rounded-lg border-gray-200" />
                 )}
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-gray-800 mb-1">Author: <span className="font-normal text-gray-600">{book.author}</span></p>

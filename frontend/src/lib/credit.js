@@ -12,6 +12,19 @@ export function getBorrowLimit(score) {
   return Math.floor((score ?? 100) / 20)
 }
 
+export function getExpectedCreditDeltaOnReturn(borrowing) {
+  if (!borrowing?.due_date) return 10
+  const due = new Date(borrowing.due_date)
+  const returned = new Date()
+  due.setHours(0, 0, 0, 0)
+  returned.setHours(0, 0, 0, 0)
+  if (returned <= due) {
+    const daysEarly = Math.round((due - returned) / (1000 * 60 * 60 * 24))
+    return daysEarly >= 3 ? 15 : 10
+  }
+  return -20
+}
+
 export function formatProfileName(profile) {
   const name = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ').trim()
   return name || null
